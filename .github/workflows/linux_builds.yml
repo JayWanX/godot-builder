@@ -1,0 +1,263 @@
+name: 🐧 Linux Builds
+on:
+  workflow_call:
+    inputs:
+      repository:
+        description: Godot engine source repository (owner/repo).
+        required: false
+        default: godotengine/godot
+        type: string
+      repo-safe:
+        description: Repository name with '/' replaced by '_' (safe for artifact names).
+        required: false
+        default: ""
+        type: string
+      engine-sha:
+        description: Resolved commit SHA of the engine ref (cache key stability).
+        required: false
+        default: ""
+        type: string
+      ref:
+        description: Branch, tag, or commit SHA of the engine source.
+        required: false
+        default: master
+        type: string
+      target:
+        description: Build target (editor, template_debug, template_release).
+        required: false
+        default: editor
+        type: string
+      scons-flags:
+        description: Additional SCons flags appended to the build.
+        required: false
+        default: ""
+        type: string
+      profile:
+        description: >-
+          custom.py source (empty = skip, inline:<base64>, file:<path>,
+          repo:<owner/repo>[@<ref>]:<path>).
+        required: false
+        default: ""
+        type: string
+      gdbuild:
+        description: >-
+          .gdbuild build profile source (empty = skip, inline:<base64>, file:<path>,
+          repo:<owner/repo>[@<ref>]:<path>).
+        required: false
+        default: ""
+        type: string
+      custom-modules:
+        description: Comma-separated custom module repositories in "owner/repo[@ref]" form.
+        required: false
+        default: ""
+        type: string
+      encryption-key:
+        description: >-
+          Godot script encryption key (hexadecimal string). Exported as
+          SCRIPT_AES256_ENCRYPTION_KEY and picked up automatically by Godot's SConstruct.
+        required: false
+        default: ""
+        type: string
+      upload-artifact:
+        description: Upload build artifacts.
+        required: false
+        default: true
+        type: boolean
+    secrets:
+      GIT_PAT:
+        description: "GitHub token for private repositories (repo: mode / custom-modules)."
+        required: false
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: Godot engine source repository (owner/repo).
+        required: false
+        default: godotengine/godot
+        type: string
+      repo-safe:
+        description: Repository name with '/' replaced by '_' (safe for artifact names).
+        required: false
+        default: ""
+        type: string
+      engine-sha:
+        description: Resolved commit SHA of the engine ref (cache key stability).
+        required: false
+        default: ""
+        type: string
+      ref:
+        description: Branch, tag, or commit SHA of the engine source.
+        required: false
+        default: master
+        type: string
+      target:
+        description: Build target.
+        required: false
+        default: editor
+        type: choice
+        options: [editor, template_debug, template_release]
+      scons-flags:
+        description: Additional SCons flags appended to the build.
+        required: false
+        default: ""
+        type: string
+      profile:
+        description: >-
+          custom.py source (empty = skip, inline:<base64>, file:<path>,
+          repo:<owner/repo>[@<ref>]:<path>).
+        required: false
+        default: ""
+        type: string
+      gdbuild:
+        description: >-
+          .gdbuild build profile source (empty = skip, inline:<base64>, file:<path>,
+          repo:<owner/repo>[@<ref>]:<path>).
+        required: false
+        default: ""
+        type: string
+      custom-modules:
+        description: Comma-separated custom module repositories in "owner/repo[@ref]" form.
+        required: false
+        default: ""
+        type: string
+      encryption-key:
+        description: >-
+          Godot script encryption key (hexadecimal string). Exported as
+          SCRIPT_AES256_ENCRYPTION_KEY and picked up automatically by Godot's SConstruct.
+        required: false
+        default: ""
+        type: string
+      upload-artifact:
+        description: Upload build artifacts.
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  build-linux:
+    # Stay one LTS before latest to increase portability of Linux artifacts.
+    runs-on: ubuntu-22.04
+    name: ${{ matrix.name }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Editor (target=editor)
+            cache-name: linux-editor
+            target: editor
+            scons-flags: compiledb=yes
+
+          - name: Template (target=template_release)
+            cache-name: linux-template
+            target: template_release
+            scons-flags: debug_symbols=no
+
+          - name: Minimal template (target=template_release, everything disabled)
+            cache-name: linux-template-minimal
+            target: template_release
+            scons-flags: >-
+              modules_enabled_by_default=no
+              module_text_server_fb_enabled=no
+              disable_3d=yes
+              disable_advanced_gui=yes
+              disable_physics_2d=yes
+              disable_physics_3d=yes
+              deprecated=no
+              minizip=no
+              brotli=no
+              debug_symbols=no
+
+    steps:
+      - name: Checkout engine source
+        if: matrix.target == inputs.target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ inputs.repository }}
+          ref: ${{ inputs.ref }}
+          token: ${{ secrets.GIT_PAT || github.token }}
+          submodules: recursive
+
+      - name: Setup dependencies
+        if: matrix.target == inputs.target
+        run: |
+          sudo apt-get update
+          sudo apt-get install libwayland-bin
+
+      - name: Restore Godot build cache
+        if: matrix.target == inputs.target
+        uses: ./.github/actions/godot-cache-restore
+        with:
+          cache-name: ${{ inputs.repo-safe || github.event.repository.name }}-${{ matrix.cache-name }}
+          engine-sha: ${{ inputs.engine-sha }}
+        continue-on-error: true
+
+      - name: Setup Python and SCons
+        if: matrix.target == inputs.target
+        uses: ./.github/actions/godot-deps
+
+      - name: Inject build configuration (custom.py / .gdbuild / custom modules / env)
+        if: matrix.target == inputs.target
+        id: inject
+        uses: ./.github/actions/godot-config-inject
+        with:
+          profile: ${{ inputs.profile }}
+          gdbuild: ${{ inputs.gdbuild }}
+          custom-modules: ${{ inputs.custom-modules }}
+          encryption-key: ${{ inputs.encryption-key }}
+          repo-token: ${{ secrets.GIT_PAT }}
+
+      - name: 检出 GodotBuilder 辅助脚本
+        if: matrix.target == inputs.target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: godot_builder
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: |
+            .github/scripts
+
+      - name: 确保标准头显式包含（兼容新版编译器）
+        if: matrix.target == inputs.target
+        run: python godot_builder/.github/scripts/ensure_standard_includes.py
+
+      - name: Compilation
+        if: matrix.target == inputs.target
+        uses: ./.github/actions/godot-build
+        with:
+          scons-flags: ${{ matrix.scons-flags }} ${{ inputs.scons-flags }}
+          platform: linuxbsd
+          target: ${{ inputs.target }}
+          build-profile: ${{ steps.inject.outputs.build-profile }}
+          profile-path: ${{ steps.inject.outputs.profile-path }}
+          custom-modules-dir: ${{ steps.inject.outputs.custom-modules-dir }}
+
+      - name: Save Godot build cache
+        if: matrix.target == inputs.target
+        uses: ./.github/actions/godot-cache-save
+        with:
+          cache-name: ${{ inputs.repo-safe || github.event.repository.name }}-${{ matrix.cache-name }}
+          engine-sha: ${{ inputs.engine-sha }}
+        continue-on-error: true
+
+      - name: Prepare artifact
+        if: matrix.target == inputs.target && inputs.upload-artifact
+        run: |
+          rm -rf ./bin/build_deps
+          strip bin/godot.* || true
+          chmod +x bin/godot.*
+
+      - name: Upload artifact
+        uses: ./.github/actions/upload-artifact
+        if: matrix.target == inputs.target && inputs.upload-artifact
+        with:
+          name: ${{ inputs.repo-safe || github.event.repository.name }}-${{ matrix.cache-name }}
+
+      - name: Smoke test
+        if: matrix.target == inputs.target
+        run: |
+          BIN=$(ls -t bin/godot.* 2>/dev/null | grep -v '\.dSYM' | head -1)
+          [ -n "$BIN" ] || { echo "::error::no godot binary found in bin/"; exit 1; }
+          "$BIN" --version

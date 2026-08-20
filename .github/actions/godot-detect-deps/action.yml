@@ -1,0 +1,58 @@
+name: Detect required Godot build dependencies
+description: >-
+  Read the resolved SCons profile.py AND any user-supplied scons-flags, and
+  emit which optional dependency SDKs (d3d12 / angle / winrt / accesskit /
+  vulkan) the build actually needs, so callers can gate their SDK download
+  steps. Rule: a flag explicitly set to "no" in profile.py OR via scons-flags
+  means not needed; everything else (including an absent flag) means needed.
+  scons-flags overrides profile.py (explicit user intent). This avoids forcing
+  feature flags onto the scons command line, which would silently override the
+  user's profile.
+inputs:
+  profile-path:
+    description: >-
+      Absolute path to the resolved profile.py. Empty = unknown, all SDKs
+      treated as needed (safe default).
+    required: false
+    default: ""
+  scons-flags:
+    description: >-
+      Additional SCons flags (e.g. "${{ matrix.scons-flags }} ${{ inputs.scons-flags }}").
+      Any "flag=yes|no" here overrides the same flag in profile.py, so the SDK
+      download decision matches what scons actually builds. Empty = none.
+    required: false
+    default: ""
+outputs:
+  need-d3d12:
+    description: '"yes" if the D3D12 SDK must be downloaded, else "no".'
+    value: ${{ steps.detect.outputs.need-d3d12 }}
+  need-angle:
+    description: '"yes" if ANGLE must be downloaded, else "no".'
+    value: ${{ steps.detect.outputs.need-angle }}
+  need-winrt:
+    description: '"yes" if WinRT components must be downloaded, else "no".'
+    value: ${{ steps.detect.outputs.need-winrt }}
+  need-accesskit:
+    description: '"yes" if AccessKit must be downloaded, else "no".'
+    value: ${{ steps.detect.outputs.need-accesskit }}
+  need-vulkan:
+    description: '"yes" if the Vulkan SDK must be downloaded, else "no".'
+    value: ${{ steps.detect.outputs.need-vulkan }}
+runs:
+  using: composite
+  steps:
+    - name: Detect needed dependency SDKs from profile.py + scons-flags
+      id: detect
+      shell: sh
+      env:
+        PROFILE_PATH: ${{ inputs.profile-path }}
+        SCONS_FLAGS: ${{ inputs.scons-flags }}
+      run: |
+        if command -v python3 >/dev/null 2>&1; then
+          py=python3
+        else
+          py=python
+        fi
+        out="$("$py" "$GITHUB_ACTION_PATH/scripts/detect.py" "${PROFILE_PATH:-}" "${SCONS_FLAGS:-}")"
+        echo "$out"
+        printf '%s\n' "$out" >> "$GITHUB_OUTPUT"

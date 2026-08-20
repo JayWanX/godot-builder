@@ -1,0 +1,57 @@
+[gd_scene format=3 uid="uid://2r3j810bx1j4"]
+
+[ext_resource type="Script" uid="uid://yi7cu6a83nh7" path="res://ui/panels/summary_panel.gd" id="1"]
+
+[node name="SummaryPanel" type="PanelContainer" unique_id=2099921064 node_paths=PackedStringArray("summary_rows", "change_quantity_label")]
+custom_minimum_size = Vector2(240, 0)
+custom_maximum_size = Vector2(320, -1)
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_type_variation = &"SummaryPanelContainer"
+script = ExtResource("1")
+summary_rows = NodePath("MarginContainer/VBoxContainer/ScrollContainer/SummaryRows")
+change_quantity_label = NodePath("MarginContainer/VBoxContainer/ChangeQuantityLabel")
+
+[node name="MarginContainer" type="MarginContainer" parent="." unique_id=1900066592]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer" unique_id=1838212807]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer" unique_id=694893619]
+layout_mode = 2
+text = "摘要"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="TitleSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer" unique_id=1587998726]
+layout_mode = 2
+
+[node name="ScrollContainer" type="ScrollContainer" parent="MarginContainer/VBoxContainer" unique_id=734904687]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="SummaryRows" type="VBoxContainer" parent="MarginContainer/VBoxContainer/ScrollContainer" unique_id=1061170736]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="ChangeQuantityLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=1599943685]
+visible = false
+layout_mode = 2
+size_flags_vertical = 1
+horizontal_alignment = 1
+vertical_alignment = 1

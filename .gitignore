@@ -1,0 +1,8 @@
+.godot/
+/android/
+.workbuddy/
+bin/
+export_presets.cfg
+!build/export_presets.cfg
+/__pycache__/
+*.pyc

@@ -1,0 +1,69 @@
+name: Build Godot
+description: Build Godot with the provided options.
+
+inputs:
+  target:
+    description: Build target (editor, template_release, template_debug).
+    default: editor
+    type: choice
+    options: [editor, template_debug, template_release]
+  platform:
+    description: Target platform.
+    type: string
+  scons-flags:
+    description: Additional SCons flags.
+    type: string
+  scons-cache:
+    description: The SCons cache path.
+    default: ${{ github.workspace }}/.scons_cache/
+    type: string
+  build-profile:
+    description: Path to a Godot build profile (.gdbuild / JSON) to pass via build_profile=. Empty to omit.
+    default: ""
+    type: string
+  profile-path:
+    description: Path to a SCons profile file (profile.py) to pass via profile=. Empty to omit.
+    default: ""
+    type: string
+  custom-modules-dir:
+    description: Path to a directory of custom modules to pass via custom_modules=. Empty to omit.
+    default: ""
+    type: string
+
+runs:
+  using: composite
+  steps:
+    - name: SCons Build
+      shell: sh
+      env:
+        # Inputs are passed via env and referenced as shell variables to prevent
+        # expression/shell injection from user-controlled values.
+        INPUT_PLATFORM: ${{ inputs.platform }}
+        INPUT_TARGET: ${{ inputs.target }}
+        INPUT_SCONS_FLAGS: ${{ inputs.scons-flags }}
+        INPUT_SCONS_CACHE: ${{ inputs.scons-cache }}
+        BUILD_PROFILE: ${{ inputs.build-profile }}
+        PROFILE_PATH: ${{ inputs.profile-path }}
+        CUSTOM_MODULES_DIR: ${{ inputs.custom-modules-dir }}
+      run: |
+        EXTRA_FLAGS=""
+        if [ -n "$BUILD_PROFILE" ]; then EXTRA_FLAGS="$EXTRA_FLAGS build_profile=$BUILD_PROFILE"; fi
+        if [ -n "$PROFILE_PATH" ]; then EXTRA_FLAGS="$EXTRA_FLAGS profile=$PROFILE_PATH"; fi
+        if [ -n "$CUSTOM_MODULES_DIR" ]; then EXTRA_FLAGS="$EXTRA_FLAGS custom_modules=$CUSTOM_MODULES_DIR"; fi
+
+        echo "Building with flags:" platform="$INPUT_PLATFORM" target="$INPUT_TARGET" $INPUT_SCONS_FLAGS $EXTRA_FLAGS "cache_path=$INPUT_SCONS_CACHE" redirect_build_objects=no
+
+        if [ "$INPUT_TARGET" != "editor" ]; then
+          # Ensure we don't include editor code in export template builds.
+          rm -rf editor
+        fi
+
+        if [ "${{ github.event.number }}" != "" ]; then
+          # Set build identifier with pull request number if available. This is displayed throughout the editor.
+          export BUILD_NAME="gh-${{ github.event.number }}"
+        else
+          export BUILD_NAME="gh"
+        fi
+
+        scons platform="$INPUT_PLATFORM" target="$INPUT_TARGET" $INPUT_SCONS_FLAGS $EXTRA_FLAGS "cache_path=$INPUT_SCONS_CACHE" redirect_build_objects=no
+        ls -l bin/

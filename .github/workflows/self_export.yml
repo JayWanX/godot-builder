@@ -1,0 +1,380 @@
+name: 🔨 Build & Export GodotBuilder
+
+on:
+  workflow_dispatch:
+    inputs:
+      engine-ref:
+        description: >-
+          Godot 引擎引用（发布标签，如 4.7.2-stable），用于检出模板源码并下载同名编辑器。
+          留空则自动解析 godotengine/godot 的最新稳定版。
+        required: false
+        default: ""
+        type: string
+      target:
+        description: 构建的模板目标。
+        required: false
+        default: template_release
+        type: choice
+        options:
+          - template_debug
+          - template_release
+      presets:
+        description: 要导出的预设名称（build/export_presets.cfg 中的 name，逗号分隔）。
+        required: false
+        default: Windows Desktop,Linux/X11,macOS
+        type: string
+      encryption-key:
+        description: 脚本加密密钥（十六进制，至少 16 位）。留空则关闭 PCK 加密。
+        required: false
+        default: ""
+        type: string
+      upload-artifact:
+        description: 是否上传导出产物。
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ${{ github.workflow }}|${{ inputs.engine-ref }}|${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    name: 🔍 解析引擎版本
+    runs-on: ubuntu-latest
+    outputs:
+      ref: ${{ steps.resolve.outputs.ref }}
+    steps:
+      - name: 解析 engine-ref（默认最新稳定版）
+        id: resolve
+        env:
+          INPUT_REF: ${{ inputs.engine-ref }}
+        run: |
+          REF="$INPUT_REF"
+          if [ -z "$REF" ]; then
+            echo "engine-ref 为空，解析 Godot 最新稳定版..."
+            REF=$(gh api repos/godotengine/godot/releases/latest --jq '.tag_name' 2>/dev/null) \
+              || REF=$(curl -fsSL "https://api.github.com/repos/godotengine/godot/releases/latest" | jq -r '.tag_name')
+            if [ -z "$REF" ] || [ "$REF" = "null" ]; then
+              echo "::error::无法获取 Godot 最新稳定版，请显式指定 engine-ref。"
+              exit 1
+            fi
+            echo "解析到最新稳定版: $REF"
+          fi
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+
+  build-templates-linux:
+    name: 构建 Linux / Windows 模板
+    needs: resolve
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - name: 检出 Godot 引擎源码
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: godotengine/godot
+          ref: ${{ needs.resolve.outputs.ref }}
+          token: ${{ secrets.GIT_PAT || github.token }}
+          fetch-depth: 1
+          submodules: false
+
+      - name: 检出 GodotBuilder 编译配置与脚本
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: godot_builder
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: |
+            build
+            .github/scripts
+            .github/actions/godot-detect-deps
+
+      - name: 解析引擎提交 SHA
+        id: engine-sha
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: 设置 Python 与 SCons
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: 3.x
+
+      - name: 安装 SCons
+        run: |
+          python -m pip install scons==4.11.0
+          scons --version
+
+      - name: 恢复构建缓存
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
+        with:
+          path: .scons_cache/
+          key: gb-self-lxw|${{ steps.engine-sha.outputs.sha }}|${{ github.sha }}
+          restore-keys: |
+            gb-self-lxw|${{ steps.engine-sha.outputs.sha }}
+            gb-self-lxw|${{ github.ref_name }}
+            gb-self-lxw|${{ github.event.repository.default_branch }}
+
+      - name: 注入构建配置（custom.py + project.gdbuild）
+        run: |
+          cp godot_builder/build/profile.py custom.py
+          cp godot_builder/build/project.gdbuild project.gdbuild
+          sed 's|\.\./project\.gdbuild|project.gdbuild|' custom.py > custom.py.tmp && mv custom.py.tmp custom.py
+          grep -n build_profile custom.py
+
+      - name: 根据 profile.py 探测需要下载的依赖 SDK
+        id: detect
+        uses: ./godot_builder/.github/actions/godot-detect-deps
+        with:
+          profile-path: godot_builder/build/profile.py
+
+      - name: 确保标准头显式包含（兼容新版编译器）
+        run: python godot_builder/.github/scripts/ensure_standard_includes.py
+
+      - name: 构建 Linux 模板
+        run: |
+          scons platform=linuxbsd arch=x86_64 target=${{ inputs.target }} profile=custom.py build_profile=project.gdbuild cache_path=.scons_cache/ redirect_build_objects=no
+          ls -lh bin/
+
+      - name: 统一 Linux 模板文件名
+        run: |
+          shopt -s nullglob
+          EXP=$(grep -oE 'custom_template/(release|debug) = "@TEMPLATES_DIR@/godot\.linuxbsd\.[A-Za-z0-9_.]+"' godot_builder/build/export_presets.cfg \
+                | grep "${{ inputs.target }}" | grep -oE 'godot\.linuxbsd\.[A-Za-z0-9_.]+' | head -1)
+          [ -n "$EXP" ] || EXP="godot.linuxbsd.${{ inputs.target }}.x86_64"
+          files=(bin/godot.linuxbsd.${{ inputs.target }}*x86_64*)
+          [ ${#files[@]} -eq 1 ] || { echo "模板文件不唯一：${files[*]}"; ls -lh bin/; exit 1; }
+          mv "${files[0]}" "bin/$EXP"
+
+      - name: 安装 MinGW（Windows 交叉编译）
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64
+
+      - name: 安装 Direct3D 12 SDK 依赖
+        if: steps.detect.outputs.need-d3d12 == 'yes'
+        run: python ./misc/scripts/install_d3d12_sdk_windows.py
+
+      - name: 构建 Windows 模板
+        run: |
+          scons platform=windows use_mingw=yes arch=x86_64 target=${{ inputs.target }} profile=custom.py build_profile=project.gdbuild cache_path=.scons_cache/ redirect_build_objects=no
+          ls -lh bin/
+
+      - name: 统一 Windows 模板文件名
+        run: |
+          shopt -s nullglob
+          EXP=$(grep -oE 'custom_template/(release|debug) = "@TEMPLATES_DIR@/godot\.windows\.[A-Za-z0-9_.]+"' godot_builder/build/export_presets.cfg \
+                | grep "${{ inputs.target }}" | grep -oE 'godot\.windows\.[A-Za-z0-9_.]+' | head -1)
+          [ -n "$EXP" ] || EXP="godot.windows.${{ inputs.target }}.x86_64.exe"
+          files=(bin/godot.windows.${{ inputs.target }}*.exe)
+          [ ${#files[@]} -eq 1 ] || { echo "模板文件不唯一：${files[*]}"; ls -lh bin/; exit 1; }
+          mv "${files[0]}" "bin/$EXP"
+
+      - name: 保存构建缓存
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
+        with:
+          path: ${{ github.workspace }}/.scons_cache/
+          key: gb-self-lxw|${{ steps.engine-sha.outputs.sha }}|${{ github.sha }}
+
+      - name: 上传 Linux 模板
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: template-linux
+          path: bin/godot.linuxbsd.template_*.x86_64
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: 上传 Windows 模板
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: template-windows
+          path: bin/godot.windows.template_*.x86_64.exe
+          if-no-files-found: error
+          retention-days: 7
+
+  build-template-macos:
+    name: 构建 macOS 模板
+    needs: resolve
+    runs-on: macos-26
+    timeout-minutes: 240
+    steps:
+      - name: 检出 Godot 引擎源码
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: godotengine/godot
+          ref: ${{ needs.resolve.outputs.ref }}
+          token: ${{ secrets.GIT_PAT || github.token }}
+          fetch-depth: 1
+          submodules: false
+
+      - name: 检出 GodotBuilder 编译配置与脚本
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: godot_builder
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: |
+            build
+            .github/scripts
+            .github/actions/godot-detect-deps
+
+      - name: 解析引擎提交 SHA
+        id: engine-sha
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: 设置 Python 与 SCons
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: 3.x
+
+      - name: 安装 SCons
+        run: |
+          python -m pip install scons==4.11.0
+          scons --version
+
+      - name: 恢复构建缓存
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
+        with:
+          path: .scons_cache/
+          key: gb-self-macos|${{ steps.engine-sha.outputs.sha }}|${{ github.sha }}
+          restore-keys: |
+            gb-self-macos|${{ steps.engine-sha.outputs.sha }}
+            gb-self-macos|${{ github.ref_name }}
+            gb-self-macos|${{ github.event.repository.default_branch }}
+
+      - name: 注入构建配置（custom.py + project.gdbuild）
+        run: |
+          cp godot_builder/build/profile.py custom.py
+          cp godot_builder/build/project.gdbuild project.gdbuild
+          sed 's|\.\./project\.gdbuild|project.gdbuild|' custom.py > custom.py.tmp && mv custom.py.tmp custom.py
+          grep -n build_profile custom.py
+
+      - name: 确保标准头显式包含（兼容新版编译器）
+        run: python godot_builder/.github/scripts/ensure_standard_includes.py
+
+      - name: 构建 macOS 模板（x86_64）
+        run: |
+          scons platform=macos arch=x86_64 target=${{ inputs.target }} profile=custom.py build_profile=project.gdbuild cache_path=.scons_cache/ redirect_build_objects=no
+          ls -lh bin/godot.macos.*
+
+      - name: 构建 macOS 模板（arm64）
+        run: |
+          scons platform=macos arch=arm64 target=${{ inputs.target }} profile=custom.py build_profile=project.gdbuild cache_path=.scons_cache/ redirect_build_objects=no
+          ls -lh bin/godot.macos.*
+
+      - name: 合并 universal 二进制
+        run: |
+          lipo -create \
+            bin/godot.macos.${{ inputs.target }}.x86_64* \
+            bin/godot.macos.${{ inputs.target }}.arm64* \
+            -output bin/godot.macos.${{ inputs.target }}.universal
+          rm -f bin/godot.macos.${{ inputs.target }}.x86_64* bin/godot.macos.${{ inputs.target }}.arm64*
+          strip bin/godot.macos.${{ inputs.target }}.universal || true
+          chmod +x bin/godot.macos.${{ inputs.target }}.universal
+          ls -lh bin/
+
+      - name: 保存构建缓存
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
+        with:
+          path: ${{ github.workspace }}/.scons_cache/
+          key: gb-self-macos|${{ steps.engine-sha.outputs.sha }}|${{ github.sha }}
+
+      - name: 上传 macOS 模板
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: template-macos
+          path: bin/godot.macos.template_*.universal
+          if-no-files-found: error
+          retention-days: 7
+
+  export:
+    name: 导出并上传成品
+    needs: [build-templates-linux, build-template-macos, resolve]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    env:
+      GODOT_VERSION: ${{ needs.resolve.outputs.ref }}
+      PRESETS: ${{ inputs.presets }}
+      SCRIPT_KEY: ${{ inputs.encryption-key }}
+    steps:
+      - name: 检出 GodotBuilder 源码
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: 校验输入
+        run: |
+          if ! [[ "$GODOT_VERSION" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "::error::engine-ref 含非法字符"; exit 1
+          fi
+          if [ -z "$PRESETS" ]; then
+            echo "::error::presets 不能为空"; exit 1
+          fi
+          if ! [[ "$PRESETS" =~ ^[A-Za-z0-9 /,_-]+$ ]]; then
+            echo "::error::presets 含非法字符"; exit 1
+          fi
+          if [ -n "$SCRIPT_KEY" ] && ! [[ "$SCRIPT_KEY" =~ ^[0-9a-fA-F]{16,}$ ]]; then
+            echo "::error::encryption-key 必须为十六进制且至少 16 位"; exit 1
+          fi
+
+      - name: 安装编辑器运行库
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1 libegl1 libxkbcommon0 libxkbcommon-x11-0 libxcb-cursor0 libwayland-client0 libwayland-cursor0 libwayland-egl1 libxcursor1 libxinerama1 libxi6 libxrandr2 libasound2 libpulse0 unzip
+
+      - name: 下载 Godot 编辑器
+        run: |
+          curl -L --retry 3 -o editor.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}/Godot_v${GODOT_VERSION}_linux.x86_64.zip"
+          unzip -o editor.zip
+          chmod +x Godot_v${GODOT_VERSION}_linux.x86_64
+          ./Godot_v${GODOT_VERSION}_linux.x86_64 --version
+
+      - name: 下载构建的模板
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          path: templates
+          merge-multiple: true
+
+      - name: 生成导出预设
+        run: |
+          mkdir -p bin
+          sed "s|@TEMPLATES_DIR@|$PWD/templates|g" build/export_presets.cfg > export_presets.cfg
+          if [ -z "$SCRIPT_KEY" ]; then
+            sed -i 's/encrypt_pck=true/encrypt_pck=false/; s/encrypt_directory=true/encrypt_directory=false/' export_presets.cfg
+          fi
+          echo "--- export_presets.cfg ---"
+          grep -E 'name=|custom_template/|encrypt_|export_path=' export_presets.cfg
+
+      - name: 导出各预设
+        run: |
+          FLAG="--export-release"
+          if [ "${{ inputs.target }}" = "template_debug" ]; then FLAG="--export-debug"; fi
+          echo "$PRESETS" | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | while read -r preset; do
+            [ -z "$preset" ] && continue
+            echo "==> 导出预设：$preset"
+            if [ -n "$SCRIPT_KEY" ]; then
+              ./Godot_v${GODOT_VERSION}_linux.x86_64 --headless --path . --script-encryption-key "$SCRIPT_KEY" $FLAG "$preset"
+            else
+              ./Godot_v${GODOT_VERSION}_linux.x86_64 --headless --path . $FLAG "$preset"
+            fi
+          done
+          echo "--- bin/ ---"
+          ls -lh bin/
+
+      - name: 上传导出产物
+        if: ${{ inputs.upload-artifact }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: GodotBuilder-${{ needs.resolve.outputs.ref }}-${{ inputs.target }}
+          path: bin/*
+          if-no-files-found: error
+          retention-days: 30
