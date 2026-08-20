@@ -1,0 +1,44 @@
+[gd_scene format=3 uid="uid://dsjrxls0oa5cx"]
+
+[ext_resource type="Script" uid="uid://d0rurpeeoba3f" path="res://ui/controls/fields/enum_field.gd" id="1"]
+[ext_resource type="Texture2D" uid="uid://bjfjlm6avdnng" path="res://assets/icons/reset.svg" id="2_5l23h"]
+
+[node name="EnumField" type="HBoxContainer" unique_id=1608356271 node_paths=PackedStringArray("option_button", "display_name_label", "reset_button")]
+custom_minimum_size = Vector2(0, 34)
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -24.5
+offset_top = -17.0
+offset_right = 24.5
+offset_bottom = 17.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+script = ExtResource("1")
+option_button = NodePath("OptionButton")
+display_name_label = NodePath("DisplayName")
+reset_button = NodePath("ResetButton")
+
+[node name="DisplayName" type="Label" parent="." unique_id=1503859477]
+layout_mode = 2
+vertical_alignment = 1
+
+[node name="OptionButton" type="OptionButton" parent="." unique_id=1076461851]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+
+[node name="ResetButton" type="Button" parent="." unique_id=313253328]
+visible = false
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "恢复默认值"
+icon = ExtResource("2_5l23h")
+flat = true
+
+[connection signal="item_selected" from="OptionButton" to="." method="_on_option_button_item_selected"]
+[connection signal="pressed" from="ResetButton" to="." method="reset_control"]

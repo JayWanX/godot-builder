@@ -1,0 +1,315 @@
+name: 🔗 Godot Remote Build
+on:
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: Godot engine source repository (owner/repo).
+        required: false
+        default: godotengine/godot
+        type: string
+      ref:
+        description: Branch, tag, or commit SHA of the engine source.
+        required: false
+        default: master
+        type: string
+      target:
+        description: Build target.
+        required: false
+        default: editor
+        type: choice
+        options: [editor, template_debug, template_release]
+      platform:
+        description: >-
+          Platforms to build, comma-separated (e.g. "linux,windows"). "all" = every
+          platform workflow.
+        required: false
+        default: all
+        type: string
+      profile:
+        description: >-
+          custom.py content source. Empty = not injected. "inline:<base64>" = decode and
+          write. "file:<path>" = copy from the checked-out engine repo.
+          "repo:<owner/repo>[@<ref>]:<path>" = fetch from a remote repository.
+        required: false
+        default: ""
+        type: string
+      gdbuild:
+        description: >-
+          .gdbuild build profile source. Empty = not injected. "inline:<base64>" = decode and
+          write. "file:<path>" = copy from the checked-out engine repo.
+          "repo:<owner/repo>[@<ref>]:<path>" = fetch from a remote repository.
+        required: false
+        default: ""
+        type: string
+      custom-modules:
+        description: Comma-separated custom module repositories in "owner/repo[@ref]" form.
+        required: false
+        default: ""
+        type: string
+      scons-flags:
+        description: Additional SCons flags appended to the build.
+        required: false
+        default: ""
+        type: string
+      encryption-key:
+        description: >-
+          Godot script encryption key (hexadecimal string). Exported as
+          SCRIPT_AES256_ENCRYPTION_KEY and picked up automatically by Godot's SConstruct.
+        required: false
+        default: ""
+        type: string
+      upload-artifact:
+        description: Upload build artifacts.
+        required: false
+        default: true
+        type: boolean
+  repository_dispatch:
+    types: [godot-build]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}|${{ github.event_name }}|${{ inputs.ref || github.event.client_payload.ref || 'default' }}
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    name: 🔍 Resolve build parameters
+    runs-on: ubuntu-latest
+    outputs:
+      platforms: ${{ steps.resolve.outputs.platforms }}
+      repository: ${{ steps.resolve.outputs.repository }}
+      repo-safe: ${{ steps.resolve.outputs.repo-safe }}
+      ref: ${{ steps.resolve.outputs.ref }}
+      engine-sha: ${{ steps.resolve.outputs.engine-sha }}
+      target: ${{ steps.resolve.outputs.target }}
+      scons-flags: ${{ steps.resolve.outputs.scons-flags }}
+      profile: ${{ steps.resolve.outputs.profile }}
+      gdbuild: ${{ steps.resolve.outputs.gdbuild }}
+      custom-modules: ${{ steps.resolve.outputs.custom-modules }}
+      encryption-key: ${{ steps.resolve.outputs.encryption-key }}
+      upload-artifact: ${{ steps.resolve.outputs.upload-artifact }}
+    steps:
+      - id: resolve
+        shell: bash
+        env:
+          # UI inputs (workflow_dispatch). Passed via env to avoid expression re-parsing.
+          UI_REPOSITORY: ${{ inputs.repository }}
+          UI_REF: ${{ inputs.ref }}
+          UI_TARGET: ${{ inputs.target }}
+          UI_PLATFORM: ${{ inputs.platform }}
+          UI_SCONS_FLAGS: ${{ inputs.scons-flags }}
+          UI_PROFILE: ${{ inputs.profile }}
+          UI_GDBUILD: ${{ inputs.gdbuild }}
+          UI_CUSTOM_MODULES: ${{ inputs.custom-modules }}
+          UI_ENCRYPTION_KEY: ${{ inputs.encryption-key }}
+          UI_UPLOAD: ${{ inputs.upload-artifact }}
+          # API payload (repository_dispatch). Serialized to env to prevent injection.
+          PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+        run: |
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            REPO=$(printf '%s' "$PAYLOAD" | jq -r '.repository // "godotengine/godot"')
+            REF=$(printf '%s' "$PAYLOAD" | jq -r '.ref // "master"')
+            TARGET=$(printf '%s' "$PAYLOAD" | jq -r '.target // "editor"')
+            PLATFORM=$(printf '%s' "$PAYLOAD" | jq -r '.platform // "all"')
+            SCONS_FLAGS=$(printf '%s' "$PAYLOAD" | jq -r '.scons_flags // ""')
+            PROFILE=$(printf '%s' "$PAYLOAD" | jq -r '.profile // ""')
+            GDBUILD=$(printf '%s' "$PAYLOAD" | jq -r '.gdbuild // ""')
+            CUSTOM_MODULES=$(printf '%s' "$PAYLOAD" | jq -r '.custom_modules // ""')
+            ENCRYPTION_KEY=$(printf '%s' "$PAYLOAD" | jq -r '.encryption_key // ""')
+            UPLOAD=$(printf '%s' "$PAYLOAD" | jq -r '.upload_artifact // true')
+          else
+            REPO="${UI_REPOSITORY:-godotengine/godot}"
+            REF="${UI_REF:-master}"
+            TARGET="${UI_TARGET:-editor}"
+            PLATFORM="${UI_PLATFORM:-all}"
+            SCONS_FLAGS="${UI_SCONS_FLAGS:-}"
+            PROFILE="${UI_PROFILE:-}"
+            GDBUILD="${UI_GDBUILD:-}"
+            CUSTOM_MODULES="${UI_CUSTOM_MODULES:-}"
+            ENCRYPTION_KEY="${UI_ENCRYPTION_KEY:-}"
+            UPLOAD="${UI_UPLOAD:-true}"
+          fi
+
+          # --- Validation ---
+          case "$TARGET" in
+            editor|template_debug|template_release) ;;
+            *) echo "::error::unsupported target '$TARGET' (expected editor|template_debug|template_release)."; exit 1 ;;
+          esac
+          case "$REPO" in
+            [A-Za-z0-9_]*/[A-Za-z0-9_.-]*) ;;
+            *) echo "::error::invalid repository '$REPO', expected owner/repo."; exit 1 ;;
+          esac
+          if [ -z "$REF" ]; then
+            echo "::error::ref must not be empty."; exit 1
+          fi
+          # Strip newlines from free-form inputs before they reach shell/env
+          SCONS_FLAGS=$(printf '%s' "$SCONS_FLAGS" | tr '\n' ' ')
+          PROFILE=$(printf '%s' "$PROFILE" | tr '\n' ' ')
+          GDBUILD=$(printf '%s' "$GDBUILD" | tr '\n' ' ')
+          CUSTOM_MODULES=$(printf '%s' "$CUSTOM_MODULES" | tr '\n' ' ')
+
+          # --- Platform selection (comma-separated or "all") ---
+          case "$PLATFORM" in
+            all)
+              PLATFORMS='["linux","windows","macos","android","ios","web"]' ;;
+            *)
+              PLATFORMS="["
+              IFS=','
+              for p in $PLATFORM; do
+                case "$p" in
+                  linux|windows|macos|android|ios|web) ;;
+                  *) echo "::error::unsupported platform '$p'."; exit 1 ;;
+                esac
+                PLATFORMS="$PLATFORMS\"$p\","
+              done
+              unset IFS
+              PLATFORMS="${PLATFORMS%,}]" ;;
+          esac
+
+          # --- Resolve engine ref to a concrete commit SHA for stable cache keys ---
+          ENGINE_SHA=$(git ls-remote "https://github.com/$REPO.git" "$REF^{}" "refs/heads/$REF" "refs/tags/$REF^{}" 2>/dev/null | awk '{print $1}' | head -1)
+          if [ -z "$ENGINE_SHA" ]; then
+            case "$REF" in
+              [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*) ENGINE_SHA="$REF" ;;
+              *) echo "::warning::could not resolve engine ref '$REF' to a commit SHA."; ENGINE_SHA="unknown" ;;
+            esac
+          fi
+
+          # --- Artifact/cache-safe repository name (artifact names must not contain '/') ---
+          REPO_SAFE=$(printf '%s' "$REPO" | tr '/' '_')
+
+          echo "platforms=$PLATFORMS" >> "$GITHUB_OUTPUT"
+          echo "repository=$REPO" >> "$GITHUB_OUTPUT"
+          echo "repo-safe=$REPO_SAFE" >> "$GITHUB_OUTPUT"
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+          echo "engine-sha=$ENGINE_SHA" >> "$GITHUB_OUTPUT"
+          echo "target=$TARGET" >> "$GITHUB_OUTPUT"
+          echo "scons-flags=$SCONS_FLAGS" >> "$GITHUB_OUTPUT"
+          echo "profile=$PROFILE" >> "$GITHUB_OUTPUT"
+          echo "gdbuild=$GDBUILD" >> "$GITHUB_OUTPUT"
+          echo "custom-modules=$CUSTOM_MODULES" >> "$GITHUB_OUTPUT"
+          echo "encryption-key=$ENCRYPTION_KEY" >> "$GITHUB_OUTPUT"
+          echo "upload-artifact=$UPLOAD" >> "$GITHUB_OUTPUT"
+
+  linux-build:
+    name: 🐧 Linux
+    needs: resolve
+    if: contains(fromJSON(needs.resolve.outputs.platforms), 'linux')
+    uses: ./.github/workflows/linux_builds.yml
+    with:
+      repository: ${{ needs.resolve.outputs.repository }}
+      repo-safe: ${{ needs.resolve.outputs.repo-safe }}
+      engine-sha: ${{ needs.resolve.outputs.engine-sha }}
+      ref: ${{ needs.resolve.outputs.ref }}
+      target: ${{ needs.resolve.outputs.target }}
+      scons-flags: ${{ needs.resolve.outputs.scons-flags }}
+      profile: ${{ needs.resolve.outputs.profile }}
+      gdbuild: ${{ needs.resolve.outputs.gdbuild }}
+      custom-modules: ${{ needs.resolve.outputs.custom-modules }}
+      encryption-key: ${{ needs.resolve.outputs.encryption-key }}
+      upload-artifact: ${{ needs.resolve.outputs.upload-artifact }}
+    secrets:
+      GIT_PAT: ${{ secrets.GIT_PAT }}
+
+  windows-build:
+    name: 🏁 Windows
+    needs: resolve
+    if: contains(fromJSON(needs.resolve.outputs.platforms), 'windows')
+    uses: ./.github/workflows/windows_builds.yml
+    with:
+      repository: ${{ needs.resolve.outputs.repository }}
+      repo-safe: ${{ needs.resolve.outputs.repo-safe }}
+      engine-sha: ${{ needs.resolve.outputs.engine-sha }}
+      ref: ${{ needs.resolve.outputs.ref }}
+      target: ${{ needs.resolve.outputs.target }}
+      scons-flags: ${{ needs.resolve.outputs.scons-flags }}
+      profile: ${{ needs.resolve.outputs.profile }}
+      gdbuild: ${{ needs.resolve.outputs.gdbuild }}
+      custom-modules: ${{ needs.resolve.outputs.custom-modules }}
+      encryption-key: ${{ needs.resolve.outputs.encryption-key }}
+      upload-artifact: ${{ needs.resolve.outputs.upload-artifact }}
+    secrets:
+      GIT_PAT: ${{ secrets.GIT_PAT }}
+
+  macos-build:
+    name: 🍎 macOS
+    needs: resolve
+    if: contains(fromJSON(needs.resolve.outputs.platforms), 'macos')
+    uses: ./.github/workflows/macos_builds.yml
+    with:
+      repository: ${{ needs.resolve.outputs.repository }}
+      repo-safe: ${{ needs.resolve.outputs.repo-safe }}
+      engine-sha: ${{ needs.resolve.outputs.engine-sha }}
+      ref: ${{ needs.resolve.outputs.ref }}
+      target: ${{ needs.resolve.outputs.target }}
+      scons-flags: ${{ needs.resolve.outputs.scons-flags }}
+      profile: ${{ needs.resolve.outputs.profile }}
+      gdbuild: ${{ needs.resolve.outputs.gdbuild }}
+      custom-modules: ${{ needs.resolve.outputs.custom-modules }}
+      encryption-key: ${{ needs.resolve.outputs.encryption-key }}
+      upload-artifact: ${{ needs.resolve.outputs.upload-artifact }}
+    secrets:
+      GIT_PAT: ${{ secrets.GIT_PAT }}
+
+  android-build:
+    name: 🤖 Android
+    needs: resolve
+    if: contains(fromJSON(needs.resolve.outputs.platforms), 'android')
+    uses: ./.github/workflows/android_builds.yml
+    with:
+      repository: ${{ needs.resolve.outputs.repository }}
+      repo-safe: ${{ needs.resolve.outputs.repo-safe }}
+      engine-sha: ${{ needs.resolve.outputs.engine-sha }}
+      ref: ${{ needs.resolve.outputs.ref }}
+      target: ${{ needs.resolve.outputs.target }}
+      scons-flags: ${{ needs.resolve.outputs.scons-flags }}
+      profile: ${{ needs.resolve.outputs.profile }}
+      gdbuild: ${{ needs.resolve.outputs.gdbuild }}
+      custom-modules: ${{ needs.resolve.outputs.custom-modules }}
+      encryption-key: ${{ needs.resolve.outputs.encryption-key }}
+      upload-artifact: ${{ needs.resolve.outputs.upload-artifact }}
+    secrets:
+      SERVICE_ACCOUNT_KEY: ${{ secrets.SERVICE_ACCOUNT_KEY }}
+      GIT_PAT: ${{ secrets.GIT_PAT }}
+
+  ios-build:
+    name: 🍏 iOS
+    needs: resolve
+    if: contains(fromJSON(needs.resolve.outputs.platforms), 'ios')
+    uses: ./.github/workflows/ios_builds.yml
+    with:
+      repository: ${{ needs.resolve.outputs.repository }}
+      repo-safe: ${{ needs.resolve.outputs.repo-safe }}
+      engine-sha: ${{ needs.resolve.outputs.engine-sha }}
+      ref: ${{ needs.resolve.outputs.ref }}
+      target: ${{ needs.resolve.outputs.target }}
+      scons-flags: ${{ needs.resolve.outputs.scons-flags }}
+      profile: ${{ needs.resolve.outputs.profile }}
+      gdbuild: ${{ needs.resolve.outputs.gdbuild }}
+      custom-modules: ${{ needs.resolve.outputs.custom-modules }}
+      encryption-key: ${{ needs.resolve.outputs.encryption-key }}
+      upload-artifact: ${{ needs.resolve.outputs.upload-artifact }}
+    secrets:
+      GIT_PAT: ${{ secrets.GIT_PAT }}
+
+  web-build:
+    name: 🌐 Web
+    needs: resolve
+    if: contains(fromJSON(needs.resolve.outputs.platforms), 'web')
+    uses: ./.github/workflows/web_builds.yml
+    with:
+      repository: ${{ needs.resolve.outputs.repository }}
+      repo-safe: ${{ needs.resolve.outputs.repo-safe }}
+      engine-sha: ${{ needs.resolve.outputs.engine-sha }}
+      ref: ${{ needs.resolve.outputs.ref }}
+      target: ${{ needs.resolve.outputs.target }}
+      scons-flags: ${{ needs.resolve.outputs.scons-flags }}
+      profile: ${{ needs.resolve.outputs.profile }}
+      gdbuild: ${{ needs.resolve.outputs.gdbuild }}
+      custom-modules: ${{ needs.resolve.outputs.custom-modules }}
+      encryption-key: ${{ needs.resolve.outputs.encryption-key }}
+      upload-artifact: ${{ needs.resolve.outputs.upload-artifact }}
+    secrets:
+      GIT_PAT: ${{ secrets.GIT_PAT }}

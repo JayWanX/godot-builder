@@ -1,0 +1,41 @@
+name: Save Godot build cache
+description: Save Godot build cache.
+inputs:
+  cache-name:
+    description: The cache base name (job name by default).
+    default: ${{ github.job }}
+  engine-sha:
+    description: Resolved commit SHA of the engine ref for stable cache keys.
+    default: ""
+  scons-cache:
+    description: The SCons cache path.
+    default: ${{ github.workspace }}/.scons_cache/
+
+runs:
+  using: composite
+  steps:
+    - name: Purge files before timestamp
+      shell: sh
+      run: |
+        if [ -f misc/scripts/purge_cache.py ]; then
+          misc/scripts/purge_cache.py ${{ env.CACHE_TIMESTAMP }} "${{ inputs.scons-cache }}"
+        else
+          echo "::warning::purge_cache.py not found in this engine source, skipping cache purge."
+        fi
+
+    - name: Save SCons cache directory
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ inputs.scons-cache }}
+        key: ${{ inputs.cache-name }}|${{ inputs.engine-sha || github.ref_name }}|${{ github.sha }}
+
+    # This is done after saving the new cache so that the base cache remains more relevant, to reduce
+    # the risk of the cache being purged when multiple large PRs are pushed/merged at the same time.
+    - name: Ping default cache
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      if: github.ref_name != github.event.repository.default_branch
+      with:
+        path: ${{ inputs.scons-cache }}
+        key: ${{ inputs.cache-name }}|${{ github.event.repository.default_branch }}|${{ github.sha }}
+        restore-keys: ${{ inputs.cache-name }}|${{ github.event.repository.default_branch }}
+        lookup-only: true

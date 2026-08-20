@@ -1,0 +1,64 @@
+[gd_scene format=3 uid="uid://3tti6dg3h7ue"]
+
+[ext_resource type="Script" uid="uid://tt0kayasgud" path="res://ui/controls/fields/path_field.gd" id="1"]
+[ext_resource type="Texture2D" uid="uid://bjfjlm6avdnng" path="res://assets/icons/reset.svg" id="2_vpjj3"]
+[ext_resource type="Texture2D" uid="uid://bmj7pj12ibi5r" path="res://assets/icons/folder_open.svg" id="2_xggix"]
+
+[node name="PathField" type="HBoxContainer" unique_id=193814818 node_paths=PackedStringArray("line_edit", "file_dialog", "browse_button", "display_name_label", "reset_button")]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -50.0
+offset_top = -14.0
+offset_right = 50.0
+offset_bottom = 14.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+script = ExtResource("1")
+line_edit = NodePath("LineEdit")
+file_dialog = NodePath("FileDialog")
+browse_button = NodePath("BrowsePathButton")
+display_name_label = NodePath("DisplayName")
+reset_button = NodePath("ResetButton")
+
+[node name="DisplayName" type="Label" parent="." unique_id=1949380876]
+layout_mode = 2
+vertical_alignment = 1
+
+[node name="LineEdit" type="LineEdit" parent="." unique_id=1870180186]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+theme_type_variation = &"PathFieldLineEdit"
+context_menu_enabled = false
+emoji_menu_enabled = false
+
+[node name="BrowsePathButton" type="Button" parent="." unique_id=185352765]
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "浏览"
+icon = ExtResource("2_xggix")
+flat = true
+
+[node name="ResetButton" type="Button" parent="." unique_id=1504618539]
+visible = false
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "恢复默认值"
+icon = ExtResource("2_vpjj3")
+flat = true
+
+[node name="FileDialog" type="FileDialog" parent="." unique_id=1472204021]
+title = "Open a File or Directory"
+file_mode = 3
+access = 2
+
+[connection signal="text_changed" from="LineEdit" to="." method="_on_line_edit_text_changed"]
+[connection signal="pressed" from="BrowsePathButton" to="." method="_on_browse_path_button_pressed"]
+[connection signal="pressed" from="ResetButton" to="." method="reset_control"]
+[connection signal="dir_selected" from="FileDialog" to="." method="_on_file_dialog_dir_selected"]
+[connection signal="file_selected" from="FileDialog" to="." method="_on_file_dialog_file_selected"]

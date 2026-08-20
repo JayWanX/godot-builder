@@ -1,0 +1,187 @@
+name: Inject Godot build configuration
+description: >-
+  Inject the SCons profile file (passed via scons profile=) and .gdbuild content (inline
+  base64, file from the checked-out repo, or file from any remote repository), checkout custom
+  module repositories, and export the Godot script encryption key. All user-provided values
+  are passed via env only.
+
+inputs:
+  profile:
+    description: >-
+      Source for the SCons profile file (profile.py). Empty = not injected. "inline:<base64>"
+      = decode and write to profile.py (passed to scons via profile=<path>). "file:<path>" =
+      copy from the checked-out engine repo. "repo:<owner/repo>[@<ref>]:<path>" = shallow-clone
+      a remote repo and copy the file from it.
+    default: ""
+    type: string
+  gdbuild:
+    description: >-
+      Source for the .gdbuild build profile. Empty = not injected. "inline:<base64>" = decode
+      and write to project.gdbuild. "file:<path>" = copy from the checked-out engine repo.
+      "repo:<owner/repo>[@<ref>]:<path>" = shallow-clone a remote repo and copy the file from
+      it. The written path is exposed as the build-profile output.
+    default: ""
+    type: string
+  custom-modules:
+    description: >-
+      Comma-separated list of custom module repositories in "owner/repo[@ref]" form
+      (ref optional, defaults to the repo default branch). Each repo is cloned into
+      custom_modules/<name> and the parent directory is exposed as custom-modules-dir.
+    default: ""
+    type: string
+  encryption-key:
+    description: >-
+      Godot script encryption key (hexadecimal string). When set, SCRIPT_AES256_ENCRYPTION_KEY
+      is exported to the build environment and picked up automatically by Godot's SConstruct.
+      Empty = not set.
+    default: ""
+    type: string
+  repo-token:
+    description: >-
+      GitHub token (PAT or GitHub App token) with read access to private repositories used by
+      the "repo:" mode and custom-modules. Passed via env, applied as a git insteadOf URL
+      rewrite so every clone (including submodules) is authenticated. Empty = public repos only.
+    default: ""
+    type: string
+
+outputs:
+  profile-path:
+    description: Absolute path to the written profile.py file. Empty if not injected.
+    value: ${{ steps.profile.outputs.profile-path }}
+  build-profile:
+    description: Absolute path to the written .gdbuild file. Empty if not injected.
+    value: ${{ steps.gdbuild.outputs.build-profile }}
+  custom-modules-dir:
+    description: Absolute path to the directory holding the checked-out custom modules. Empty if not requested.
+    value: ${{ steps.modules.outputs.custom-modules-dir }}
+
+runs:
+  using: composite
+  steps:
+    - name: Configure git auth for private repositories
+      shell: sh
+      env:
+        REPO_TOKEN: ${{ inputs.repo-token }}
+      run: |
+        if [ -n "$REPO_TOKEN" ]; then
+          git config --global url."https://x-access-token:${REPO_TOKEN}@github.com/".insteadOf "https://github.com/"
+          echo "::notice::configured git insteadOf auth for github.com (token length ${#REPO_TOKEN})"
+        else
+          echo "::notice::repo-token not set, private repositories are not accessible."
+        fi
+
+    - name: Inject profile (scons profile=)
+      id: profile
+      shell: sh
+      env:
+        SOURCE: ${{ inputs.profile }}
+      run: |
+        . "$GITHUB_ACTION_PATH/scripts/fetch_repo_file.sh"
+        if [ -z "$SOURCE" ]; then
+          echo "::notice::profile: not injected (empty input)."
+          exit 0
+        fi
+        case "$SOURCE" in
+          inline:*)
+            printf '%s' "${SOURCE#inline:}" | base64 -d > profile.py \
+              || { echo "::error::profile: invalid base64 input."; exit 1; }
+            [ -s profile.py ] || { echo "::error::profile: decoded profile.py is empty."; exit 1; }
+            ;;
+          file:*)
+            cp "${SOURCE#file:}" profile.py
+            ;;
+          repo:*)
+            fetch_repo_file "${SOURCE#repo:}" profile.py
+            ;;
+          *)
+            echo "::error::profile: unsupported source '$SOURCE', use inline:<base64>, file:<path>, or repo:<owner/repo>[@<ref>]:<path>."
+            exit 1
+            ;;
+        esac
+        echo "profile-path=$(pwd)/profile.py" >> "$GITHUB_OUTPUT"
+        echo "::notice::profile written to $(pwd)/profile.py (passed via scons profile=)"
+
+    - name: Inject .gdbuild
+      id: gdbuild
+      shell: sh
+      env:
+        SOURCE: ${{ inputs.gdbuild }}
+      run: |
+        . "$GITHUB_ACTION_PATH/scripts/fetch_repo_file.sh"
+        if [ -z "$SOURCE" ]; then
+          echo "::notice::.gdbuild: not injected (empty input)."
+          exit 0
+        fi
+        case "$SOURCE" in
+          inline:*)
+            printf '%s' "${SOURCE#inline:}" | base64 -d > project.gdbuild \
+              || { echo "::error::gdbuild: invalid base64 input."; exit 1; }
+            [ -s project.gdbuild ] || { echo "::error::gdbuild: decoded project.gdbuild is empty."; exit 1; }
+            ;;
+          file:*)
+            cp "${SOURCE#file:}" project.gdbuild
+            ;;
+          repo:*)
+            fetch_repo_file "${SOURCE#repo:}" project.gdbuild
+            ;;
+          *)
+            echo "::error::gdbuild: unsupported source '$SOURCE', use inline:<base64>, file:<path>, or repo:<owner/repo>[@<ref>]:<path>."
+            exit 1
+            ;;
+        esac
+        echo "build-profile=$(pwd)/project.gdbuild" >> "$GITHUB_OUTPUT"
+        echo "::notice::.gdbuild written to $(pwd)/project.gdbuild"
+
+    - name: Checkout custom modules
+      id: modules
+      shell: sh
+      env:
+        MODULES: ${{ inputs.custom-modules }}
+      run: |
+        if [ -z "$MODULES" ]; then
+          echo "::notice::custom_modules: none requested."
+          exit 0
+        fi
+        mkdir -p custom_modules
+        IFS=','
+        for entry in $MODULES; do
+          [ -z "$entry" ] && continue
+          repo="${entry%@*}"
+          ref="${entry#*@}"
+          [ "$ref" = "$entry" ] && ref=""
+          name="${repo##*/}"
+          case "$repo" in
+            [A-Za-z0-9_]*/[A-Za-z0-9_.-]*);;
+            *)
+              echo "::error::custom_modules: invalid repository '$repo', expected owner/repo."
+              exit 1
+              ;;
+          esac
+          echo "::group::Checkout custom module $repo@${ref:-default}"
+          if [ -n "$ref" ]; then
+            git clone --depth=1 --recursive "https://github.com/$repo" "custom_modules/$name" -b "$ref"
+          else
+            git clone --depth=1 --recursive "https://github.com/$repo" "custom_modules/$name"
+          fi
+          echo "::endgroup::"
+        done
+        unset IFS
+        echo "custom-modules-dir=$(pwd)/custom_modules" >> "$GITHUB_OUTPUT"
+
+    - name: Export Godot script encryption key
+      shell: sh
+      env:
+        ENCRYPTION_KEY: ${{ inputs.encryption-key }}
+      run: |
+        if [ -z "$ENCRYPTION_KEY" ]; then
+          echo "::notice::encryption_key: not set (empty input)."
+          exit 0
+        fi
+        case "$ENCRYPTION_KEY" in
+          *[!0-9a-fA-F]*)
+            echo "::error::encryption_key must be a hexadecimal string."
+            exit 1
+            ;;
+        esac
+        echo "SCRIPT_AES256_ENCRYPTION_KEY=$ENCRYPTION_KEY" >> "$GITHUB_ENV"
+        echo "::notice::exported SCRIPT_AES256_ENCRYPTION_KEY (${#ENCRYPTION_KEY} hex chars)"
