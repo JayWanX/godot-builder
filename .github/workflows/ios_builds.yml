@@ -1,0 +1,211 @@
+name: 🍏 iOS Builds
+on:
+  workflow_call:
+    inputs:
+      repository:
+        description: Godot engine source repository (owner/repo).
+        required: false
+        default: godotengine/godot
+        type: string
+      repo-safe:
+        description: Repository name with '/' replaced by '_' (safe for artifact names).
+        required: false
+        default: ""
+        type: string
+      engine-sha:
+        description: Resolved commit SHA of the engine ref (cache key stability).
+        required: false
+        default: ""
+        type: string
+      ref:
+        description: Branch, tag, or commit SHA of the engine source.
+        required: false
+        default: master
+        type: string
+      target:
+        description: Build target (editor, template_debug, template_release).
+        required: false
+        default: template_release
+        type: string
+      platform:
+        description: Apple platform to build (ios or visionos).
+        required: false
+        default: ios
+        type: string
+      scons-flags:
+        description: Additional SCons flags appended to the build.
+        required: false
+        default: ""
+        type: string
+      profile:
+        description: >-
+          custom.py source (empty = skip, file:<path>,
+          repo:<owner/repo>[@<ref>]:<path>).
+        required: false
+        default: ""
+        type: string
+      gdbuild:
+        description: >-
+          .gdbuild build profile source (empty = skip, file:<path>,
+          repo:<owner/repo>[@<ref>]:<path>).
+        required: false
+        default: ""
+        type: string
+      custom-modules:
+        description: Comma-separated custom module repositories in "owner/repo[@ref]" form.
+        required: false
+        default: ""
+        type: string
+      upload-artifact:
+        description: Upload build artifacts.
+        required: false
+        default: true
+        type: boolean
+    secrets:
+      GIT_PAT:
+        description: "GitHub token for private repositories (repo: mode / custom-modules)."
+        required: false
+      ENCRYPTION_KEY:
+        description: "Godot PCK encryption key (hex). Empty = no PCK encryption."
+        required: false
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: Godot engine source repository (owner/repo).
+        required: false
+        default: godotengine/godot
+        type: string
+      repo-safe:
+        description: Repository name with '/' replaced by '_' (safe for artifact names).
+        required: false
+        default: ""
+        type: string
+      engine-sha:
+        description: Resolved commit SHA of the engine ref (cache key stability).
+        required: false
+        default: ""
+        type: string
+      ref:
+        description: Branch, tag, or commit SHA of the engine source.
+        required: false
+        default: master
+        type: string
+      target:
+        description: Build target.
+        required: false
+        default: template_release
+        type: choice
+        options: [editor, template_debug, template_release]
+      platform:
+        description: Apple platform to build.
+        required: false
+        default: ios
+        type: choice
+        options: [ios, visionos]
+      scons-flags:
+        description: Additional SCons flags appended to the build.
+        required: false
+        default: ""
+        type: string
+      profile:
+        description: >-
+          custom.py source (empty = skip, file:<path>,
+          repo:<owner/repo>[@<ref>]:<path>).
+        required: false
+        default: ""
+        type: string
+      gdbuild:
+        description: >-
+          .gdbuild build profile source (empty = skip, file:<path>,
+          repo:<owner/repo>[@<ref>]:<path>).
+        required: false
+        default: ""
+        type: string
+      custom-modules:
+        description: Comma-separated custom module repositories in "owner/repo[@ref]" form.
+        required: false
+        default: ""
+        type: string
+      upload-artifact:
+        description: Upload build artifacts.
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read    # 读取仓库内容（检出用）
+  actions: write    # 上传构建产物 artifact
+
+jobs:
+  ios-template:
+    # From https://docs.github.com/en/actions/how-tos/write-workflows/choose-where-workflows-run/choose-the-runner-for-a-job#choosing-github-hosted-runners
+    runs-on: macos-26
+    name: Build (target=${{ inputs.target }})
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout engine source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ inputs.repository }}
+          ref: ${{ inputs.ref }}
+          token: ${{ secrets.GIT_PAT || github.token }}
+          submodules: recursive
+
+      - name: Restore Godot build cache
+        uses: ./.github/actions/godot-cache-restore
+        with:
+          cache-name: ${{ inputs.repo-safe || github.event.repository.name }}-${{ inputs.platform }}
+          engine-sha: ${{ inputs.engine-sha }}
+        continue-on-error: true
+
+      - name: Setup Python and SCons
+        uses: ./.github/actions/godot-deps
+
+      - name: Inject build configuration (custom.py / .gdbuild / custom modules / env)
+        id: inject
+        uses: ./.github/actions/godot-config-inject
+        with:
+          profile: ${{ inputs.profile }}
+          gdbuild: ${{ inputs.gdbuild }}
+          custom-modules: ${{ inputs.custom-modules }}
+          encryption-key: ${{ secrets.ENCRYPTION_KEY }}
+          repo-token: ${{ secrets.GIT_PAT }}
+
+      - name: 检出 GodotBuilder 辅助脚本
+        if: matrix.target == inputs.target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: godot_builder
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: |
+            .github/scripts
+
+      - name: 确保标准头显式包含（兼容新版编译器）
+        if: matrix.target == inputs.target
+        shell: bash
+        run: python godot_builder/.github/scripts/ensure_standard_includes.py
+
+      - name: Compilation
+        uses: ./.github/actions/godot-build
+        with:
+          scons-flags: ${{ inputs.scons-flags }}
+          platform: ${{ inputs.platform }}
+          target: ${{ inputs.target }}
+          build-profile-path: ${{ steps.inject.outputs.build-profile-path }}
+          scons-profile-path: ${{ steps.inject.outputs.scons-profile-path }}
+          custom-modules-dir: ${{ steps.inject.outputs.custom-modules-dir }}
+
+      - name: Save Godot build cache
+        uses: ./.github/actions/godot-cache-save
+        with:
+          cache-name: ${{ inputs.repo-safe || github.event.repository.name }}-${{ inputs.platform }}
+          engine-sha: ${{ inputs.engine-sha }}
+        continue-on-error: true
+
+      - name: Upload artifact
+        if: inputs.upload-artifact
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: ${{ inputs.repo-safe || github.event.repository.name }}-${{ inputs.platform }}-${{ inputs.target }}

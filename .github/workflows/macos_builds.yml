@@ -1,0 +1,368 @@
+# ============================================================
+# 工作流名称：🍎 macOS 平台构建
+# 负责编译 Godot 引擎的 macOS 版本
+#
+# 【与 linux/windows 的最大差异】
+#   macOS 需要同时编译两种 CPU 架构（Intel x86_64 + Apple arm64），
+#   然后用 lipo 工具合并成"通用二进制"（universal binary），
+#   这样一份文件同时支持两种芯片。
+# ============================================================
+name: 🍎 macOS Builds
+
+# ============================================================
+# on: 触发方式（与 linux_builds 完全相同，inputs 可对照学习）
+# ============================================================
+on:
+  workflow_call:
+    inputs:
+      repository:          # 引擎源码仓库
+        description: Godot engine source repository (owner/repo).
+        required: false
+        default: godotengine/godot
+        type: string
+      repo-safe:           # 仓库名安全形式
+        description: Repository name with '/' replaced by '_' (safe for artifact names).
+        required: false
+        default: ""
+        type: string
+      engine-sha:          # 引擎 commit SHA
+        description: Resolved commit SHA of the engine ref (cache key stability).
+        required: false
+        default: ""
+        type: string
+      ref:                 # 引擎引用
+        description: Branch, tag, or commit SHA of the engine source.
+        required: false
+        default: master
+        type: string
+      target:              # 构建目标
+        description: Build target (editor, template_debug, template_release).
+        required: false
+        default: editor
+        type: string
+      scons-flags:         # 额外编译参数
+        description: Additional SCons flags appended to the build.
+        required: false
+        default: ""
+        type: string
+      profile:             # SCons 配置来源
+        description: >-
+          custom.py source (empty = skip, file:<path>,
+          repo:<owner/repo>[@<ref>]:<path>).
+        required: false
+        default: ""
+        type: string
+      gdbuild:             # .gdbuild 配置来源
+        description: >-
+          .gdbuild build profile source (empty = skip, file:<path>,
+          repo:<owner/repo>[@<ref>]:<path>).
+        required: false
+        default: ""
+        type: string
+      custom-modules:      # 自定义模块
+        description: Comma-separated custom module repositories in "owner/repo[@ref]" form.
+        required: false
+        default: ""
+        type: string
+      upload-artifact:     # 是否上传
+        description: Upload build artifacts.
+        required: false
+        default: true
+        type: boolean
+    secrets:
+      GIT_PAT:
+        description: "GitHub token for private repositories (repo: mode / custom-modules)."
+        required: false
+      ENCRYPTION_KEY:
+        description: "Godot PCK encryption key (hex). Empty = no PCK encryption."
+        required: false
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: Godot engine source repository (owner/repo).
+        required: false
+        default: godotengine/godot
+        type: string
+      repo-safe:
+        description: Repository name with '/' replaced by '_' (safe for artifact names).
+        required: false
+        default: ""
+        type: string
+      engine-sha:
+        description: Resolved commit SHA of the engine ref (cache key stability).
+        required: false
+        default: ""
+        type: string
+      ref:
+        description: Branch, tag, or commit SHA of the engine source.
+        required: false
+        default: master
+        type: string
+      target:
+        description: Build target.
+        required: false
+        default: editor
+        type: choice
+        options: [editor, template_debug, template_release]
+      scons-flags:
+        description: Additional SCons flags appended to the build.
+        required: false
+        default: ""
+        type: string
+      profile:
+        description: >-
+          custom.py source (empty = skip, file:<path>,
+          repo:<owner/repo>[@<ref>]:<path>).
+        required: false
+        default: ""
+        type: string
+      gdbuild:
+        description: >-
+          .gdbuild build profile source (empty = skip, file:<path>,
+          repo:<owner/repo>[@<ref>]:<path>).
+        required: false
+        default: ""
+        type: string
+      custom-modules:
+        description: Comma-separated custom module repositories in "owner/repo[@ref]" form.
+        required: false
+        default: ""
+        type: string
+      upload-artifact:
+        description: Upload build artifacts.
+        required: false
+        default: true
+        type: boolean
+
+# ============================================================
+# permissions: 工作流权限
+# 【语法】macOS 需要 actions: write（上传各架构产物，merge job 下载并上传 universal 产物）
+# ============================================================
+permissions:
+  contents: read
+  actions: write
+
+# ============================================================
+# jobs: 任务定义
+# 【语法】这个工作流有【两个 job】，它们按顺序接力：
+#   job 1: build-macos（编译 x86_64 + arm64 两种架构）
+#   job 2: merge-macos（用 needs 等待 job 1 完成后，合并成 universal）
+# 两个 job 分别跑在独立的虚拟机上，靠 artifact 传递文件
+# ============================================================
+jobs:
+  # ----------------------------------------------------------
+  # Job 1: build-macos（编译两种架构）
+  # ----------------------------------------------------------
+  build-macos:
+    # From https://docs.github.com/en/actions/...（官方文档链接）
+    # 【语法】runs-on: macos-26 = 在 macOS 最新版虚拟机运行
+    runs-on: macos-26
+    name: ${{ matrix.name }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        # 【语法】include 定义了 4 个矩阵组合：
+        #   编辑器 x86_64 + 编辑器 arm64 + 模板 x86_64 + 模板 arm64
+        include:
+          - name: Editor x86_64         # Intel 芯片的编辑器
+            cache-name: macos-editor-x86_64
+            target: editor
+            arch: x86_64                # 【语法】自定义字段 arch，矩阵里可用
+
+          - name: Editor arm64           # Apple 芯片的编辑器
+            cache-name: macos-editor-arm64
+            target: editor
+            arch: arm64
+
+          - name: Template x86_64        # Intel 芯片的发布模板
+            cache-name: macos-template-x86_64
+            target: template_release
+            arch: x86_64
+            scons-flags: debug_symbols=no
+
+          - name: Template arm64         # Apple 芯片的发布模板
+            cache-name: macos-template-arm64
+            target: template_release
+            arch: arm64
+            scons-flags: debug_symbols=no
+
+    steps:
+      # 步骤 1：检出引擎源码
+      - name: Checkout engine source
+        if: matrix.target == inputs.target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ inputs.repository }}
+          ref: ${{ inputs.ref }}
+          token: ${{ secrets.GIT_PAT || github.token }}
+          submodules: recursive
+
+      # 步骤 2：恢复缓存
+      - name: Restore Godot build cache
+        if: matrix.target == inputs.target
+        uses: ./.github/actions/godot-cache-restore
+        with:
+          cache-name: ${{ inputs.repo-safe || github.event.repository.name }}-${{ matrix.cache-name }}
+          engine-sha: ${{ inputs.engine-sha }}
+        continue-on-error: true
+
+      # 步骤 3：安装 Python 和 SCons
+      - name: Setup Python and SCons
+        if: matrix.target == inputs.target
+        uses: ./.github/actions/godot-deps
+
+      # 步骤 4：注入编译配置
+      - name: Inject build configuration (custom.py / .gdbuild / custom modules / env)
+        if: matrix.target == inputs.target
+        id: inject
+        uses: ./.github/actions/godot-config-inject
+        with:
+          profile: ${{ inputs.profile }}
+          gdbuild: ${{ inputs.gdbuild }}
+          custom-modules: ${{ inputs.custom-modules }}
+          encryption-key: ${{ secrets.ENCRYPTION_KEY }}
+          repo-token: ${{ secrets.GIT_PAT }}
+
+      # 步骤 5：探测需要哪些依赖 SDK
+      - name: 根据 profile.py 与 scons-flags 探测需要下载的依赖 SDK
+        if: matrix.target == inputs.target
+        id: detect
+        uses: ./.github/actions/godot-detect-deps
+        with:
+          scons-profile-path: ${{ steps.inject.outputs.scons-profile-path }}
+          scons-flags: ${{ matrix.scons-flags }} ${{ inputs.scons-flags }}
+
+      # 步骤 6-8：按需下载 macOS 专用依赖（ANGLE / AccessKit / Vulkan SDK）
+      - name: Download pre-built ANGLE
+        if: matrix.target == inputs.target && steps.detect.outputs.need-angle == 'yes'
+        shell: bash
+        run: python3 ./misc/scripts/install_angle.py
+
+      - name: Download pre-built AccessKit
+        if: matrix.target == inputs.target && steps.detect.outputs.need-accesskit == 'yes'
+        shell: bash
+        run: python3 ./misc/scripts/install_accesskit.py
+
+      - name: Setup Vulkan SDK
+        if: matrix.target == inputs.target && steps.detect.outputs.need-vulkan == 'yes'
+        shell: bash
+        run: bash misc/scripts/install_vulkan_sdk_macos.sh
+
+      # 步骤 9：检出本仓库辅助脚本
+      - name: 检出 GodotBuilder 辅助脚本
+        if: matrix.target == inputs.target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: godot_builder
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: |
+            .github/scripts
+
+      # 步骤 10：确保标准头显式包含
+      - name: 确保标准头显式包含（兼容新版编译器）
+        if: matrix.target == inputs.target
+        shell: bash
+        run: python godot_builder/.github/scripts/ensure_standard_includes.py
+
+      # 步骤 11：编译（【语法】关键：arch=${{ matrix.arch }} 把矩阵里的架构传给编译）
+      - name: Compilation (${{ matrix.arch }})
+        if: matrix.target == inputs.target
+        uses: ./.github/actions/godot-build
+        with:
+          scons-flags: ${{ matrix.scons-flags }} ${{ inputs.scons-flags }} arch=${{ matrix.arch }}
+          platform: macos
+          target: ${{ inputs.target }}
+          build-profile-path: ${{ steps.inject.outputs.build-profile-path }}
+          scons-profile-path: ${{ steps.inject.outputs.scons-profile-path }}
+          custom-modules-dir: ${{ steps.inject.outputs.custom-modules-dir }}
+
+      # 步骤 12：保存缓存
+      - name: Save Godot build cache
+        if: matrix.target == inputs.target
+        uses: ./.github/actions/godot-cache-save
+        with:
+          cache-name: ${{ inputs.repo-safe || github.event.repository.name }}-${{ matrix.cache-name }}
+          engine-sha: ${{ inputs.engine-sha }}
+        continue-on-error: true
+
+      # 步骤 13：整理产物
+      - name: Prepare artifact
+        if: matrix.target == inputs.target && inputs.upload-artifact
+        shell: bash
+        run: |
+          rm -rf ./bin/build_deps
+          strip bin/godot.* || true
+          chmod +x bin/godot.*
+
+      # 步骤 14：上传（【语法】path 指定上传哪个文件：
+      #   bin/godot.macos.<target>.<arch>* 只上传本矩阵架构的产物）
+      #   注意 artifact 名含 arch（如 ...-macos-editor-x86_64），供 merge job 区分
+      - name: Upload artifact
+        if: matrix.target == inputs.target && inputs.upload-artifact
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: ${{ inputs.repo-safe || github.event.repository.name }}-${{ matrix.cache-name }}
+          path: bin/godot.macos.${{ inputs.target }}.${{ matrix.arch }}*
+
+  # ----------------------------------------------------------
+  # Job 2: merge-macos（合并 universal）
+  # 【语法】needs: build-macos = 等 build-macos 完成后才运行
+  # 作用：把 x86_64 和 arm64 两个文件用 lipo 合并成 universal
+  # ============================================================
+  merge-macos:
+    needs: build-macos          # 【语法】needs = 依赖关系（前置 job 完成才跑）
+    runs-on: macos-26           # lipo 是 macOS 自带工具，必须在 mac 上跑
+    name: Merge ${{ matrix.name }} (universal)
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # 只有 2 个合并组合（编辑器 / 模板），每种把两架构合起来
+        include:
+          - name: Editor
+            target: editor
+          - name: Template
+            target: template_release
+
+    steps:
+      # 步骤 1：下载 build job 上传的两种架构产物
+      - name: Download arch artifacts
+        if: matrix.target == inputs.target
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          # 【语法】pattern: 按名字模式匹配下载多个 artifact
+          #   ...-macos-editor-* 会同时匹配 -x86_64 和 -arm64 两个
+          pattern: ${{ inputs.repo-safe || github.event.repository.name }}-macos-${{ matrix.target }}-*
+          path: build/            # 下载到 build/ 目录
+          merge-multiple: true    # 【语法】多个 artifact 合并到同一目录
+
+      # 步骤 2：【核心】合并 universal 二进制
+      - name: Merge universal binary
+        if: matrix.target == inputs.target
+        shell: bash
+        run: |
+          ls -la build/
+          # 【语法】lipo -create 把两个架构的文件合成一个 universal 文件
+          lipo -create ./build/godot.macos.${{ matrix.target }}.x86_64* ./build/godot.macos.${{ matrix.target }}.arm64* -output ./build/godot.macos.${{ matrix.target }}.universal
+          # 删掉两个单架构文件，只留合并后的
+          rm ./build/godot.macos.${{ matrix.target }}.x86_64* ./build/godot.macos.${{ matrix.target }}.arm64*
+          strip ./build/godot.macos.${{ matrix.target }}.universal || true
+          chmod +x ./build/godot.macos.${{ matrix.target }}.universal
+
+      # 步骤 3：上传合并后的 universal 产物
+      # 【语法】artifact 名不再带 arch（...-macos-editor），因为已统一
+      - name: Upload artifact
+        if: matrix.target == inputs.target && inputs.upload-artifact
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: ${{ inputs.repo-safe || github.event.repository.name }}-macos-${{ matrix.target }}
+          path: ./build/godot.macos.${{ matrix.target }}.universal
+
+      # 步骤 4：冒烟测试
+      - name: Smoke test
+        if: matrix.target == inputs.target
+        shell: bash
+        run: |
+          ./build/godot.macos.${{ matrix.target }}.universal --version

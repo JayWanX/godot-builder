@@ -1,0 +1,9 @@
+{
+  "source": "godotengine/godot@master",
+  "target": ["template_release"],
+  "platform": ["linux", "windows", "macos", "android", "ios", "visionos"],
+  "profile_path": "build/profile.py",
+  "gdbuild_path": "build/project.gdbuild",
+  "custom_modules": [],
+  "upload_artifact": true
+}

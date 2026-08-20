@@ -1,0 +1,41 @@
+name: Save Godot build cache
+description: 保存 Godot 构建缓存。
+inputs:
+  cache-name:
+    description: 缓存基础名（默认取 job 名）。
+    default: ${{ github.job }}
+  engine-sha:
+    description: 引擎 ref 解析出的 commit SHA，用于生成稳定的缓存键。
+    default: ""
+  scons-cache:
+    description: SCons 缓存路径。
+    default: ${{ github.workspace }}/.scons_cache/
+
+runs:
+  using: composite
+  steps:
+    - name: 按时间戳清理过期缓存文件
+      shell: bash
+      run: |
+        if [ -f misc/scripts/purge_cache.py ]; then
+          misc/scripts/purge_cache.py ${{ env.CACHE_TIMESTAMP }} "${{ inputs.scons-cache }}"
+        else
+          echo "::warning::该引擎源码中未找到 purge_cache.py，跳过缓存清理。"
+        fi
+
+    - name: 保存 SCons 缓存目录
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ inputs.scons-cache }}
+        key: ${{ inputs.cache-name }}|${{ inputs.engine-sha || github.ref_name }}|${{ github.sha }}
+
+    # 在保存新缓存之后再做，使基础缓存保持较高的相关性，
+    # 降低多个大型 PR 同时推送/合并时缓存被清理的风险。
+    - name: 保活默认分支缓存
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      if: github.ref_name != github.event.repository.default_branch
+      with:
+        path: ${{ inputs.scons-cache }}
+        key: ${{ inputs.cache-name }}|${{ github.event.repository.default_branch }}|${{ github.sha }}
+        restore-keys: ${{ inputs.cache-name }}|${{ github.event.repository.default_branch }}
+        lookup-only: true

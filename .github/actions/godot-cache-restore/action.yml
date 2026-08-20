@@ -1,0 +1,31 @@
+name: Restore Godot build cache
+description: 恢复 Godot 构建缓存。
+inputs:
+  cache-name:
+    description: 缓存基础名（默认取 job 名）。
+    default: ${{ github.job }}
+  engine-sha:
+    description: 引擎 ref 解析出的 commit SHA，用于生成稳定的缓存键。
+    default: ""
+  scons-cache:
+    description: SCons 缓存路径。
+    default: ${{ github.workspace }}/.scons_cache/
+
+runs:
+  using: composite
+  steps:
+    - name: 恢复缓存
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ inputs.scons-cache }}
+        # 重新编译同一引擎 commit 时精确命中；否则依次回溯到该引擎 commit、当前分支、
+        # 再到默认分支（这样 PR 能继承默认分支的缓存）。
+        key: ${{ inputs.cache-name }}|${{ inputs.engine-sha || github.ref_name }}|${{ github.sha }}
+        restore-keys: |
+          ${{ inputs.cache-name }}|${{ inputs.engine-sha || github.ref_name }}
+          ${{ inputs.cache-name }}|${{ github.ref_name }}
+          ${{ inputs.cache-name }}|${{ github.event.repository.default_branch }}
+
+    - name: 记录 unix 时间戳
+      shell: bash
+      run: echo "CACHE_TIMESTAMP=$(date +%s)" >> $GITHUB_ENV

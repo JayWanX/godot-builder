@@ -1,0 +1,330 @@
+# ============================================================
+# 工作流名称：🏁 Windows 平台构建
+# 专门负责编译 Godot 引擎的 Windows 版本
+# ============================================================
+name: 🏁 Windows Builds
+
+# ============================================================
+# on: 触发方式
+# 【语法】workflow_call = 被其他工作流调用
+#         workflow_dispatch = 网页手动触发
+# 与 linux_builds.yml 完全相同的结构（可对照学习）
+# ============================================================
+on:
+  workflow_call:
+    inputs:
+      repository:          # 引擎源码仓库
+        description: Godot engine source repository (owner/repo).
+        required: false
+        default: godotengine/godot
+        type: string
+      repo-safe:           # 仓库名安全形式（artifact 命名用）
+        description: Repository name with '/' replaced by '_' (safe for artifact names).
+        required: false
+        default: ""
+        type: string
+      engine-sha:          # 引擎 commit SHA（缓存 key）
+        description: Resolved commit SHA of the engine ref (cache key stability).
+        required: false
+        default: ""
+        type: string
+      ref:                 # 引擎引用
+        description: Branch, tag, or commit SHA of the engine source.
+        required: false
+        default: master
+        type: string
+      target:              # 构建目标
+        description: Build target (editor, template_debug, template_release).
+        required: false
+        default: editor
+        type: string
+      scons-flags:         # 额外编译参数
+        description: Additional SCons flags appended to the build.
+        required: false
+        default: ""
+        type: string
+      profile:             # SCons 配置来源
+        description: >-
+          custom.py source (empty = skip, file:<path>,
+          repo:<owner/repo>[@<ref>]:<path>).
+        required: false
+        default: ""
+        type: string
+      gdbuild:             # .gdbuild 配置来源
+        description: >-
+          .gdbuild build profile source (empty = skip, file:<path>,
+          repo:<owner/repo>[@<ref>]:<path>).
+        required: false
+        default: ""
+        type: string
+      custom-modules:      # 自定义模块
+        description: Comma-separated custom module repositories in "owner/repo[@ref]" form.
+        required: false
+        default: ""
+        type: string
+      upload-artifact:     # 是否上传
+        description: Upload build artifacts.
+        required: false
+        default: true
+        type: boolean
+    secrets:
+      GIT_PAT:
+        description: "GitHub token for private repositories (repo: mode / custom-modules)."
+        required: false
+      ENCRYPTION_KEY:
+        description: "Godot PCK encryption key (hex). Empty = no PCK encryption."
+        required: false
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: Godot engine source repository (owner/repo).
+        required: false
+        default: godotengine/godot
+        type: string
+      repo-safe:
+        description: Repository name with '/' replaced by '_' (safe for artifact names).
+        required: false
+        default: ""
+        type: string
+      engine-sha:
+        description: Resolved commit SHA of the engine ref (cache key stability).
+        required: false
+        default: ""
+        type: string
+      ref:
+        description: Branch, tag, or commit SHA of the engine source.
+        required: false
+        default: master
+        type: string
+      target:
+        description: Build target.
+        required: false
+        default: editor
+        type: choice
+        options: [editor, template_debug, template_release]
+      scons-flags:
+        description: Additional SCons flags appended to the build.
+        required: false
+        default: ""
+        type: string
+      profile:
+        description: >-
+          custom.py source (empty = skip, file:<path>,
+          repo:<owner/repo>[@<ref>]:<path>).
+        required: false
+        default: ""
+        type: string
+      gdbuild:
+        description: >-
+          .gdbuild build profile source (empty = skip, file:<path>,
+          repo:<owner/repo>[@<ref>]:<path>).
+        required: false
+        default: ""
+        type: string
+      custom-modules:
+        description: Comma-separated custom module repositories in "owner/repo[@ref]" form.
+        required: false
+        default: ""
+        type: string
+      upload-artifact:
+        description: Upload build artifacts.
+        required: false
+        default: true
+        type: boolean
+
+# ============================================================
+# permissions: 工作流权限（最少权限原则）
+# ============================================================
+permissions:
+  contents: read    # 读取仓库内容（检出用）
+  actions: write    # 上传构建产物 artifact
+
+# ============================================================
+# 【语法】env: 全局环境变量（作用于整个工作流的所有步骤）
+# 与步骤内的 env 不同，这里定义的变量每个步骤都能读到
+# ============================================================
+env:
+  # 让 SCons 缓存 MSVC 编译器配置（Windows 专用优化）
+  SCONS_CACHE_MSVC_CONFIG: true
+  # 强制 Python 输出用 UTF-8 编码（Windows 默认编码不同，容易乱码）
+  PYTHONIOENCODING: utf8
+
+# ============================================================
+# jobs: 任务定义
+# ============================================================
+jobs:
+  # ----------------------------------------------------------
+  # build-windows: Windows 构建任务
+  # 与 linux 同构，但注意运行环境和语法差异
+  # ----------------------------------------------------------
+  build-windows:
+    # Windows 10 with latest image
+    # 【语法】runs-on: windows-latest = Windows 最新版虚拟机
+    runs-on: windows-latest
+    name: ${{ matrix.name }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 组合 1：编辑器（windows_subsystem=console 让程序带控制台窗口，方便调试输出）
+          - name: Editor (target=editor)
+            cache-name: windows-editor
+            target: editor
+            scons-flags: windows_subsystem=console
+
+          # 组合 2：发布模板
+          - name: Template (target=template_release)
+            cache-name: windows-template
+            target: template_release
+            scons-flags: windows_subsystem=console
+
+    # ----------------------------------------------------------
+    # 【语法】本工作流统一用 bash 执行所有 run 步骤
+    # Windows runner 默认 shell 是 PowerShell，故每个 run 都显式写 shell: bash
+    # 命令会通过 Git Bash 执行（Windows 自带路径转换/命令）
+    # ----------------------------------------------------------
+    steps:
+      # 步骤 1：检出引擎源码
+      - name: Checkout engine source
+        if: matrix.target == inputs.target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ inputs.repository }}
+          ref: ${{ inputs.ref }}
+          token: ${{ secrets.GIT_PAT || github.token }}
+          submodules: recursive
+
+      # 步骤 2：恢复编译缓存
+      - name: Restore Godot build cache
+        if: matrix.target == inputs.target
+        uses: ./.github/actions/godot-cache-restore
+        with:
+          cache-name: ${{ inputs.repo-safe || github.event.repository.name }}-${{ matrix.cache-name }}
+          engine-sha: ${{ inputs.engine-sha }}
+        continue-on-error: true
+
+      # 步骤 3：安装 Python 和 SCons
+      - name: Setup Python and SCons
+        if: matrix.target == inputs.target
+        uses: ./.github/actions/godot-deps
+
+      # 步骤 4：注入编译配置
+      - name: Inject build configuration (custom.py / .gdbuild / custom modules / env)
+        if: matrix.target == inputs.target
+        id: inject
+        uses: ./.github/actions/godot-config-inject
+        with:
+          profile: ${{ inputs.profile }}
+          gdbuild: ${{ inputs.gdbuild }}
+          custom-modules: ${{ inputs.custom-modules }}
+          encryption-key: ${{ secrets.ENCRYPTION_KEY }}
+          repo-token: ${{ secrets.GIT_PAT }}
+
+      # 步骤 5：【Windows 特有】探测编译需要哪些依赖 SDK
+      # 根据 profile.py 和 scons-flags 判断，输出 need-xxx 标记
+      - name: 根据 profile.py 与 scons-flags 探测需要下载的依赖 SDK
+        if: matrix.target == inputs.target
+        id: detect                       # 【语法】id 供后续步骤引用它的 outputs
+        uses: ./.github/actions/godot-detect-deps
+        with:
+          scons-profile-path: ${{ steps.inject.outputs.scons-profile-path }}
+          scons-flags: ${{ matrix.scons-flags }} ${{ inputs.scons-flags }}
+
+      # 步骤 6：按需安装 MinGW（use_mingw=yes 时需要）
+      # 【语法】steps.detect.outputs.need-mingw 引用上一步 detect 的输出做条件
+      - name: 安装 MinGW（posix 线程，use_mingw=yes 需要）
+        if: matrix.target == inputs.target && steps.detect.outputs.need-mingw == 'yes'
+        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2
+        with:
+          msystem: MINGW64
+          install: mingw-w64-x86_64-gcc
+
+      # 步骤 7：按需下载 Direct3D 12 SDK
+      # 【语法】shell: bash 统一用 bash 执行（Windows 默认是 PowerShell，需显式指定）
+      - name: Download Direct3D 12 SDK components
+        if: matrix.target == inputs.target && steps.detect.outputs.need-d3d12 == 'yes'
+        shell: bash
+        run: python ./misc/scripts/install_d3d12_sdk_windows.py
+
+      # 步骤 8：按需下载 ANGLE（OpenGL ES 转 DirectX）
+      - name: Download pre-built ANGLE
+        if: matrix.target == inputs.target && steps.detect.outputs.need-angle == 'yes'
+        shell: bash
+        run: python ./misc/scripts/install_angle.py
+
+      # 步骤 9：按需下载 WinRT 组件
+      - name: Download WinRT components
+        if: matrix.target == inputs.target && steps.detect.outputs.need-winrt == 'yes'
+        shell: bash
+        run: python ./misc/scripts/install_winrt.py
+
+      # 步骤 10：按需下载 AccessKit（无障碍支持）
+      - name: Download pre-built AccessKit
+        if: matrix.target == inputs.target && steps.detect.outputs.need-accesskit == 'yes'
+        shell: bash
+        run: python ./misc/scripts/install_accesskit.py
+
+      # 步骤 11：检出本仓库辅助脚本
+      - name: 检出 GodotBuilder 辅助脚本
+        if: matrix.target == inputs.target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: godot_builder
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: |
+            .github/scripts
+
+      # 步骤 12：确保标准头显式包含
+      - name: 确保标准头显式包含（兼容新版编译器）
+        if: matrix.target == inputs.target
+        shell: bash
+        run: python godot_builder/.github/scripts/ensure_standard_includes.py
+
+      # 步骤 13：真正编译
+      - name: Compilation
+        if: matrix.target == inputs.target
+        uses: ./.github/actions/godot-build
+        with:
+          scons-flags: ${{ matrix.scons-flags }} ${{ inputs.scons-flags }}
+          platform: windows           # 【语法】platform 值：windows
+          target: ${{ inputs.target }}
+          build-profile-path: ${{ steps.inject.outputs.build-profile-path }}
+          scons-profile-path: ${{ steps.inject.outputs.scons-profile-path }}
+          custom-modules-dir: ${{ steps.inject.outputs.custom-modules-dir }}
+
+      # 步骤 14：保存缓存
+      - name: Save Godot build cache
+        if: matrix.target == inputs.target
+        uses: ./.github/actions/godot-cache-save
+        with:
+          cache-name: ${{ inputs.repo-safe || github.event.repository.name }}-${{ matrix.cache-name }}
+          engine-sha: ${{ inputs.engine-sha }}
+        continue-on-error: true
+
+      # 步骤 15：整理产物
+      # 【语法】已统一用 bash（Windows 上走 Git Bash），不再用 PowerShell
+      - name: Prepare artifact
+        if: matrix.target == inputs.target && inputs.upload-artifact
+        shell: bash
+        run: |
+          rm -rf bin/build_deps                       # 删除构建依赖目录
+          rm -f bin/*.exp bin/*.lib bin/*.pdb          # 删除中间文件
+
+      # 步骤 16：上传产物
+      - name: Upload artifact
+        if: matrix.target == inputs.target && inputs.upload-artifact
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: ${{ inputs.repo-safe || github.event.repository.name }}-${{ matrix.cache-name }}
+
+      # 步骤 17：冒烟测试
+      # 【语法】bash 写法：ls -t 按时间倒序、head -1 取最新，直接调用绝对路径
+      - name: Smoke test
+        if: matrix.target == inputs.target
+        shell: bash
+        run: |
+          BIN=$(ls -t bin/godot*.exe 2>/dev/null | head -1)
+          [ -n "$BIN" ] || { echo "::error::no godot binary found in bin/"; exit 1; }
+          "$(pwd)/$BIN" --version

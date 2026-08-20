@@ -1,0 +1,168 @@
+name: Inject Godot build configuration
+description: >-
+  注入 SCons profile 文件（经 scons profile= 传递）与 .gdbuild 内容（取自引擎仓库或任意远程仓库），
+  检出自定义模块仓库，并导出 Godot PCK 加密密钥。所有用户输入仅经 env 传递。
+
+inputs:
+  profile:
+    description: >-
+      SCons profile 文件来源（profile.py）。空=不注入；"file:<path>"=从已检出引擎仓库复制；
+      "repo:<owner/repo>[@<ref>]:<path>"=浅克隆远程仓库后复制。路径经 profile= 传给 scons。
+    default: ""
+    type: string
+  gdbuild:
+    description: >-
+      .gdbuild 构建配置来源。空=不注入；"file:<path>"=从已检出引擎仓库复制；
+      "repo:<owner/repo>[@<ref>]:<path>"=浅克隆远程仓库后复制。写入路径暴露为 build-profile 输出。
+    default: ""
+    type: string
+  custom-modules:
+    description: >-
+      自定义模块仓库列表，逗号分隔，格式 "owner/repo[@ref]"（@ref 可省略，默认分支）。
+      每个仓库克隆到 custom_modules/<name>，父目录暴露为 custom-modules-dir 输出。
+    default: ""
+    type: string
+  encryption-key:
+    description: >-
+      Godot PCK 加密密钥（十六进制字符串）。导出为 SCRIPT_AES256_ENCRYPTION_KEY 到构建环境，
+      由 Godot 的 SConstruct 自动读取。空=不设置。
+    default: ""
+    type: string
+  repo-token:
+    description: >-
+      GitHub Token（PAT 或 GitHub App Token），用于 "repo:" 模式与 custom-modules 访问私有仓库。
+      经 env 传递，并以 git insteadOf URL 重写方式应用，使所有克隆（含子模块）都被鉴权。空=仅可访问公开仓库。
+    default: ""
+    type: string
+
+outputs:
+  scons-profile-path:
+    description: 写入的 profile.py 绝对路径。未注入时为空。
+    value: ${{ steps.profile.outputs.scons-profile-path }}
+  build-profile-path:
+    description: 写入的 .gdbuild 绝对路径。未注入时为空。
+    value: ${{ steps.gdbuild.outputs.build-profile-path }}
+  custom-modules-dir:
+    description: 已检出自定义模块所在目录的绝对路径。未要求时为空。
+    value: ${{ steps.modules.outputs.custom-modules-dir }}
+
+runs:
+  using: composite
+  steps:
+    - name: 配置 git 鉴权（私有仓库）
+      shell: bash
+      env:
+        REPO_TOKEN: ${{ inputs.repo-token }}
+      run: |
+        if [ -n "$REPO_TOKEN" ]; then
+          git config --global url."https://x-access-token:${REPO_TOKEN}@github.com/".insteadOf "https://github.com/"
+          echo "::notice::已为 github.com 配置 git insteadOf 鉴权（token 长度 ${#REPO_TOKEN}）"
+        else
+          echo "::notice::未设置 repo-token，无法访问私有仓库。"
+        fi
+
+    - name: 注入 profile（scons profile=）
+      id: profile
+      shell: bash
+      env:
+        SOURCE: ${{ inputs.profile }}
+      run: |
+        . "$GITHUB_ACTION_PATH/scripts/fetch_repo_file.sh"
+        if [ -z "$SOURCE" ]; then
+          echo "::notice::profile: 未注入（输入为空）。"
+          exit 0
+        fi
+        case "$SOURCE" in
+          file:*)
+            cp "${SOURCE#file:}" profile.py
+            ;;
+          repo:*)
+            fetch_repo_file "${SOURCE#repo:}" profile.py
+            ;;
+          *)
+            echo "::error::profile: 不支持的来源 '$SOURCE'，请用 file:<path>，或 repo:<owner/repo>[@<ref>]:<path>。"
+            exit 1
+            ;;
+        esac
+        echo "scons-profile-path=$(pwd)/profile.py" >> "$GITHUB_OUTPUT"
+        echo "::notice::profile 已写入 $(pwd)/profile.py（经 scons profile= 传递）"
+
+    - name: 注入 .gdbuild
+      id: gdbuild
+      shell: bash
+      env:
+        SOURCE: ${{ inputs.gdbuild }}
+      run: |
+        . "$GITHUB_ACTION_PATH/scripts/fetch_repo_file.sh"
+        if [ -z "$SOURCE" ]; then
+          echo "::notice::.gdbuild: 未注入（输入为空）。"
+          exit 0
+        fi
+        case "$SOURCE" in
+          file:*)
+            cp "${SOURCE#file:}" project.gdbuild
+            ;;
+          repo:*)
+            fetch_repo_file "${SOURCE#repo:}" project.gdbuild
+            ;;
+          *)
+            echo "::error::gdbuild: 不支持的来源 '$SOURCE'，请用 file:<path>，或 repo:<owner/repo>[@<ref>]:<path>。"
+            exit 1
+            ;;
+        esac
+        echo "build-profile-path=$(pwd)/project.gdbuild" >> "$GITHUB_OUTPUT"
+        echo "::notice::.gdbuild 已写入 $(pwd)/project.gdbuild"
+
+    - name: 检出自定义模块仓库
+      id: modules
+      shell: bash
+      env:
+        MODULES: ${{ inputs.custom-modules }}
+      run: |
+        if [ -z "$MODULES" ]; then
+          echo "::notice::custom_modules: 未请求任何模块。"
+          exit 0
+        fi
+        mkdir -p custom_modules
+        IFS=','
+        for entry in $MODULES; do
+          [ -z "$entry" ] && continue
+          repo="${entry%@*}"
+          ref="${entry#*@}"
+          [ "$ref" = "$entry" ] && ref=""
+          name="${repo##*/}"
+          case "$repo" in
+            [A-Za-z0-9_]*/[A-Za-z0-9_.-]*);;
+            *)
+              echo "::error::custom_modules: 仓库 '$repo' 格式非法，应为 owner/repo。"
+              exit 1
+              ;;
+          esac
+          echo "::group::检出自定义模块 $repo@${ref:-default}"
+          if [ -n "$ref" ]; then
+            git clone --depth=1 --recursive "https://github.com/$repo" "custom_modules/$name" -b "$ref"
+          else
+            git clone --depth=1 --recursive "https://github.com/$repo" "custom_modules/$name"
+          fi
+          echo "::endgroup::"
+        done
+        unset IFS
+        echo "custom-modules-dir=$(pwd)/custom_modules" >> "$GITHUB_OUTPUT"
+
+    - name: 导出 Godot PCK 加密密钥
+      shell: bash
+      env:
+        ENCRYPTION_KEY: ${{ inputs.encryption-key }}
+      run: |
+        if [ -z "$ENCRYPTION_KEY" ]; then
+          echo "::notice::encryption_key: 未设置（输入为空）。"
+          exit 0
+        fi
+        case "$ENCRYPTION_KEY" in
+          *[!0-9a-fA-F]*)
+            echo "::error::encryption_key 必须是十六进制字符串。"
+            exit 1
+            ;;
+        esac
+        echo "SCRIPT_AES256_ENCRYPTION_KEY=$ENCRYPTION_KEY" >> "$GITHUB_ENV"
+        echo "::notice::已导出 SCRIPT_AES256_ENCRYPTION_KEY（${#ENCRYPTION_KEY} 个十六进制字符）"

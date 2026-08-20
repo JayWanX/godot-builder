@@ -1,0 +1,368 @@
+# ============================================================
+# 工作流名称（显示在 GitHub Actions 页面上的名字）
+# 🔨 表示这是一个"编译/构建"相关的工作流
+# ============================================================
+name: 🔨 Godot Engine Build
+
+# ============================================================
+# on: 定义"什么情况下会触发这个工作流"
+# 这里声明了三种触发方式：
+#   1. workflow_dispatch  -> 在 GitHub 网页上手动点击"Run workflow"按钮触发
+#   2. workflow_call      -> 被其他工作流通过 uses: 调用（复用本工作流）
+#   3. repository_dispatch-> 通过 GitHub API 发送事件触发（程序化调用）
+# ============================================================
+on:
+  # ----------------------------------------------------------
+  # 手动触发：点 Run workflow 时，页面会显示下面这些输入框
+  # ----------------------------------------------------------
+  workflow_dispatch:
+    inputs:
+      # 待导出项目仓库。格式：所有者/仓库名@分支（如 myorg/myproj@main）
+      # 编译配置（workflow_build.json）从这个项目里读取。
+      # 留空 = 用当前所在的仓库。
+      project:
+        description: >-
+          待导出项目仓库 owner/repo@ref（编译配置来源）。留空则用当前仓库。
+        required: false    # 非必填
+        default: ""        # 默认空字符串
+        type: string       # 输入类型：字符串
+
+      # 引擎源码仓库。格式：所有者/仓库名@分支
+      # 例如 godotengine/godot@master 表示官方 Godot 引擎的 master 分支
+      # 留空则从 workflow_build.json 配置文件的 source 字段读取
+      source:
+        description: >-
+          引擎来源 owner/repo@ref（如 godotengine/godot@master）。留空则读 .github/workflow_build.json。
+        required: false
+        default: ""
+        type: string
+
+      # 引擎的具体版本引用：可以是分支名、tag 标签、或 commit 哈希
+      # 如果手动填写，会覆盖 source 里 @ 后面的部分
+      # 留空则依次使用：source 的 @ref > 配置文件 > 默认 master
+      ref:
+        description: >-
+          引擎引用（分支/tag/commit），覆盖 source 中的 @ref。留空则用 source 或配置文件中的 ref。
+        required: false
+        default: ""
+        type: string
+
+      # 要构建的目标类型。逗号分隔可传多个，但这里只取第一个
+      # editor=编辑器、template_release=发布版模板、template_debug=调试版模板
+      # 留空则从配置文件的 target 数组取第一个
+      target:
+        description: >-
+          构建目标，逗号分隔（如 editor,template_release）。留空则读配置文件数组。
+        required: false
+        default: ""
+        type: string
+
+      # 要构建的平台。逗号分隔（如 linux,windows）
+      # 留空则从配置文件 platform 数组读取全部
+      platform:
+        description: >-
+          构建平台，逗号分隔（如 linux,windows）。留空则读配置文件数组。
+        required: false
+        default: ""
+        type: string
+
+  # ----------------------------------------------------------
+  # 被调用触发：export.yml 等通过 uses: ./.github/workflows/build.yml 调用
+  # workflow_call 的输入由调用方通过 with: 传入
+  # ----------------------------------------------------------
+  workflow_call:
+    inputs:
+      project:
+        description: 待导出项目仓库 owner/repo@ref（编译配置来源）。留空则用当前仓库。
+        required: false
+        default: ""
+        type: string
+      source:
+        description: 引擎来源 owner/repo@ref。
+        required: false
+        default: ""
+        type: string
+      ref:
+        description: 引擎引用，覆盖 source 中的 @ref。
+        required: false
+        default: ""
+        type: string
+      target:
+        description: 构建目标，逗号分隔。
+        required: false
+        default: ""
+        type: string
+      platform:
+        description: 构建平台，逗号分隔。
+        required: false
+        default: ""
+        type: string
+      # SCons 配置文件来源（用于定制引擎编译参数）
+      # 支持两种格式：
+      #   file:<路径>           从本地工作区复制
+      #   repo:<仓库>@<ref>:<路径>  从远程仓库 clone 后取文件
+      # 留空则由解析脚本根据待导出项目的 build/profile.py 自动生成
+      profile:
+        description: >-
+          SCons profile 来源（empty/file:/repo:）。默认从待导出项目 build/ 生成。
+        required: false
+        default: ""
+        type: string
+      # .gdbuild 构建配置来源（控制引擎功能裁剪），格式同上
+      gdbuild:
+        description: >-
+          .gdbuild 来源（empty/file:/repo:）。默认从待导出项目 build/ 生成。
+        required: false
+        default: ""
+        type: string
+    # 被调用时需要哪些密钥（secrets）
+    secrets:
+      # GitHub 个人访问令牌：用于访问私有仓库（引擎或自定义模块）
+      GIT_PAT:
+        description: "GitHub token for private engine repos."
+        required: false
+      # Android 服务账号密钥：用于 Android 签名导出
+      SERVICE_ACCOUNT_KEY:
+        description: "Service account key for Android export."
+        required: false
+      # Godot PCK 加密密钥（hex 字符串），编译时作为 SCRIPT_AES256_ENCRYPTION_KEY 注入
+      ENCRYPTION_KEY:
+        description: "Godot PCK encryption key (hex). Empty = no PCK encryption."
+        required: false
+
+  # ----------------------------------------------------------
+  # API 触发：外部程序通过 GitHub API 发送 repository_dispatch 事件
+  # types 指定监听的事件类型名（这里叫 godot-build）
+  # ----------------------------------------------------------
+  repository_dispatch:
+    types: [godot-build]
+
+# ============================================================
+# permissions: 声明这个工作流需要哪些权限
+# ============================================================
+permissions:
+  contents: read    # 可以读取仓库内容（检出代码用）
+  actions: write    # 可以写 actions（上传/下载构建产物 artifact 用）
+
+# ============================================================
+# concurrency: 并发控制，防止同一分支同时跑多个相同构建
+# ============================================================
+concurrency:
+  group: build-${{ github.ref }}   # 分组依据：当前分支/ref。同 ref 的任务算一组
+  cancel-in-progress: false        # 已有任务在跑时不取消它，而是排队等
+
+# ============================================================
+# jobs: 定义这个工作流要执行的所有任务（job）
+# ============================================================
+jobs:
+  # ----------------------------------------------------------
+  # resolve: "解析构建参数"任务
+  # 作用：读取配置文件 + 用户输入，算出所有构建需要的参数
+  #       然后把参数输出（outputs）给下面的 6 个平台构建任务用
+  # ----------------------------------------------------------
+  resolve:
+    name: 🔍 解析构建参数
+    runs-on: ubuntu-latest    # 在 Ubuntu 最新版虚拟机上运行
+    outputs:                  # 声明本任务要输出的参数（给下游任务引用）
+      platforms: ${{ steps.resolve.outputs.platforms }}          # 平台列表（JSON 数组）
+      repository: ${{ steps.resolve.outputs.repository }}        # 引擎仓库
+      repo-safe: ${{ steps.resolve.outputs.repo-safe }}          # 仓库名去掉"/"（用于 artifact 命名）
+      ref: ${{ steps.resolve.outputs.ref }}                      # 引擎引用
+      engine-sha: ${{ steps.resolve.outputs.engine-sha }}        # 引擎 commit SHA（缓存用）
+      engine-version: ${{ steps.resolve.outputs.engine-version }}# 引擎版本
+      target: ${{ steps.resolve.outputs.target }}                # 构建目标
+      profile: ${{ steps.resolve.outputs.profile }}              # SCons 配置来源
+      gdbuild: ${{ steps.resolve.outputs.gdbuild }}              # .gdbuild 配置来源
+      custom-modules: ${{ steps.resolve.outputs.custom-modules }}# 自定义模块
+      upload-artifact: ${{ steps.resolve.outputs.upload-artifact }} # 是否上传构建产物
+    steps:                # 本任务的步骤列表
+      # 第 1 步：检出（下载）本仓库
+      # 完整检出：因为要用 uses: ./.github/actions/godot-resolve-build 引用本地 action，
+      # 且要读 workflow_build.json，完整检出才能保证 action 目录可用
+      - name: 检出 GodotBuilder
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1（官方检出 action）
+        with:
+          ref: ${{ github.sha }}    # 检出当前触发本工作流的那个 commit
+
+      # 第 2 步：调用自定义解析 action（Python 脚本）算出全部构建参数
+      - name: 解析构建参数
+        id: resolve                # 给本步骤起 id，这样 outputs 能引用它的结果
+        uses: ./.github/actions/godot-resolve-build   # 复用自定义 action
+        with:                      # 把用户输入传给 action
+          project: ${{ inputs.project }}       # 待导出项目
+          source: ${{ inputs.source }}         # 引擎来源
+          ref: ${{ inputs.ref }}               # 引擎引用
+          target: ${{ inputs.target }}         # 构建目标
+          platform: ${{ inputs.platform }}     # 平台
+          profile: ${{ inputs.profile }}       # SCons 配置
+          gdbuild: ${{ inputs.gdbuild }}       # .gdbuild 配置
+          build-config: .github/workflow_build.json  # 配置文件路径
+
+  # ============================================================
+  # 下面 6 个任务结构完全相同，只是平台不同。
+  # 每个任务：如果解析出的平台列表包含本平台，就调用对应的平台构建工作流。
+  # ============================================================
+
+  # ----------------------------------------------------------
+  # Linux 平台构建任务
+  # ----------------------------------------------------------
+  build-linux:
+    name: 🐧 Linux
+    needs: resolve                          # 依赖 resolve 任务先完成（拿参数）
+    # 条件判断：解析出的 platforms 数组里是否含 'linux'，含才执行
+    if: contains(fromJSON(needs.resolve.outputs.platforms), 'linux')
+    uses: ./.github/workflows/linux_builds.yml   # 调用 Linux 平台构建工作流
+    with:                                   # 把 resolve 输出的参数传给它
+      repository: ${{ needs.resolve.outputs.repository }}        # 引擎仓库
+      repo-safe: ${{ needs.resolve.outputs.repo-safe }}          # 仓库安全名
+      engine-sha: ${{ needs.resolve.outputs.engine-sha }}        # 引擎 SHA（缓存 key）
+      ref: ${{ needs.resolve.outputs.ref }}                      # 引擎引用
+      target: ${{ needs.resolve.outputs.target }}                # 构建目标
+      profile: ${{ needs.resolve.outputs.profile }}              # SCons 配置
+      gdbuild: ${{ needs.resolve.outputs.gdbuild }}              # .gdbuild 配置
+      custom-modules: ${{ needs.resolve.outputs.custom-modules }}# 自定义模块
+      upload-artifact: ${{ needs.resolve.outputs.upload-artifact == 'true' }} # 是否上传
+    secrets:                                # 把密钥传给被调用的工作流
+      GIT_PAT: ${{ secrets.GIT_PAT }}
+      ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+
+  # ----------------------------------------------------------
+  # Windows 平台构建任务
+  # ----------------------------------------------------------
+  build-windows:
+    name: 🏁 Windows
+    needs: resolve
+    # 条件判断：解析出的 platforms 数组里是否含 'windows'，含才执行
+    if: contains(fromJSON(needs.resolve.outputs.platforms), 'windows')
+    uses: ./.github/workflows/windows_builds.yml   # 调用 Windows 平台构建工作流
+    with:
+      repository: ${{ needs.resolve.outputs.repository }}
+      repo-safe: ${{ needs.resolve.outputs.repo-safe }}
+      engine-sha: ${{ needs.resolve.outputs.engine-sha }}
+      ref: ${{ needs.resolve.outputs.ref }}
+      target: ${{ needs.resolve.outputs.target }}
+      profile: ${{ needs.resolve.outputs.profile }}
+      gdbuild: ${{ needs.resolve.outputs.gdbuild }}
+      custom-modules: ${{ needs.resolve.outputs.custom-modules }}
+      upload-artifact: ${{ needs.resolve.outputs.upload-artifact == 'true' }}
+    secrets:
+      GIT_PAT: ${{ secrets.GIT_PAT }}
+      ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+
+  # ----------------------------------------------------------
+  # macOS 平台构建任务
+  # ----------------------------------------------------------
+  build-macos:
+    name: 🍎 macOS
+    needs: resolve
+    # 条件判断：解析出的 platforms 数组里是否含 'macos'，含才执行
+    if: contains(fromJSON(needs.resolve.outputs.platforms), 'macos')
+    uses: ./.github/workflows/macos_builds.yml   # 调用 macOS 平台构建工作流
+    with:
+      repository: ${{ needs.resolve.outputs.repository }}
+      repo-safe: ${{ needs.resolve.outputs.repo-safe }}
+      engine-sha: ${{ needs.resolve.outputs.engine-sha }}
+      ref: ${{ needs.resolve.outputs.ref }}
+      target: ${{ needs.resolve.outputs.target }}
+      profile: ${{ needs.resolve.outputs.profile }}
+      gdbuild: ${{ needs.resolve.outputs.gdbuild }}
+      custom-modules: ${{ needs.resolve.outputs.custom-modules }}
+      upload-artifact: ${{ needs.resolve.outputs.upload-artifact == 'true' }}
+    secrets:
+      GIT_PAT: ${{ secrets.GIT_PAT }}
+      ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+
+  # ----------------------------------------------------------
+  # Android 平台构建任务
+  # ----------------------------------------------------------
+  build-android:
+    name: 🤖 Android
+    needs: resolve
+    # 条件判断：解析出的 platforms 数组里是否含 'android'，含才执行
+    if: contains(fromJSON(needs.resolve.outputs.platforms), 'android')
+    uses: ./.github/workflows/android_builds.yml   # 调用 Android 平台构建工作流
+    with:
+      repository: ${{ needs.resolve.outputs.repository }}
+      repo-safe: ${{ needs.resolve.outputs.repo-safe }}
+      engine-sha: ${{ needs.resolve.outputs.engine-sha }}
+      ref: ${{ needs.resolve.outputs.ref }}
+      target: ${{ needs.resolve.outputs.target }}
+      profile: ${{ needs.resolve.outputs.profile }}
+      gdbuild: ${{ needs.resolve.outputs.gdbuild }}
+      custom-modules: ${{ needs.resolve.outputs.custom-modules }}
+      upload-artifact: ${{ needs.resolve.outputs.upload-artifact == 'true' }}
+    secrets:
+      GIT_PAT: ${{ secrets.GIT_PAT }}
+      SERVICE_ACCOUNT_KEY: ${{ secrets.SERVICE_ACCOUNT_KEY }}   # Android 还需要服务账号密钥
+      ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+
+  # ----------------------------------------------------------
+  # iOS 平台构建任务
+  # ----------------------------------------------------------
+  build-ios:
+    name: 🍏 iOS
+    needs: resolve
+    # 条件判断：解析出的 platforms 数组里是否含 'ios'，含才执行
+    if: contains(fromJSON(needs.resolve.outputs.platforms), 'ios')
+    uses: ./.github/workflows/ios_builds.yml   # 调用 iOS 平台构建工作流
+    with:
+      repository: ${{ needs.resolve.outputs.repository }}
+      repo-safe: ${{ needs.resolve.outputs.repo-safe }}
+      engine-sha: ${{ needs.resolve.outputs.engine-sha }}
+      ref: ${{ needs.resolve.outputs.ref }}
+      target: ${{ needs.resolve.outputs.target }}
+      platform: ios          # 指定构建 iOS（visionos 由 build-visionos 处理）
+      profile: ${{ needs.resolve.outputs.profile }}
+      gdbuild: ${{ needs.resolve.outputs.gdbuild }}
+      custom-modules: ${{ needs.resolve.outputs.custom-modules }}
+      upload-artifact: ${{ needs.resolve.outputs.upload-artifact == 'true' }}
+    secrets:
+      GIT_PAT: ${{ secrets.GIT_PAT }}
+      ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+
+  # ----------------------------------------------------------
+  # visionOS 平台构建任务（复用 ios_builds.yml，仅 platform 参数不同）
+  # ----------------------------------------------------------
+  build-visionos:
+    name: 🥽 visionOS
+    needs: resolve
+    # 条件判断：解析出的 platforms 数组里是否含 'visionos'，含才执行
+    if: contains(fromJSON(needs.resolve.outputs.platforms), 'visionos')
+    uses: ./.github/workflows/ios_builds.yml   # 复用同一 Apple 构建工作流
+    with:
+      repository: ${{ needs.resolve.outputs.repository }}
+      repo-safe: ${{ needs.resolve.outputs.repo-safe }}
+      engine-sha: ${{ needs.resolve.outputs.engine-sha }}
+      ref: ${{ needs.resolve.outputs.ref }}
+      target: ${{ needs.resolve.outputs.target }}
+      platform: visionos     # 构建 visionOS
+      profile: ${{ needs.resolve.outputs.profile }}
+      gdbuild: ${{ needs.resolve.outputs.gdbuild }}
+      custom-modules: ${{ needs.resolve.outputs.custom-modules }}
+      upload-artifact: ${{ needs.resolve.outputs.upload-artifact == 'true' }}
+    secrets:
+      GIT_PAT: ${{ secrets.GIT_PAT }}
+      ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+
+  # ----------------------------------------------------------
+  # Web 平台构建任务
+  # ----------------------------------------------------------
+  build-web:
+    name: 🌐 Web
+    needs: resolve
+    # 条件判断：解析出的 platforms 数组里是否含 'web'，含才执行
+    if: contains(fromJSON(needs.resolve.outputs.platforms), 'web')
+    uses: ./.github/workflows/web_builds.yml   # 调用 Web 平台构建工作流
+    with:
+      repository: ${{ needs.resolve.outputs.repository }}
+      repo-safe: ${{ needs.resolve.outputs.repo-safe }}
+      engine-sha: ${{ needs.resolve.outputs.engine-sha }}
+      ref: ${{ needs.resolve.outputs.ref }}
+      target: ${{ needs.resolve.outputs.target }}
+      profile: ${{ needs.resolve.outputs.profile }}
+      gdbuild: ${{ needs.resolve.outputs.gdbuild }}
+      custom-modules: ${{ needs.resolve.outputs.custom-modules }}
+      upload-artifact: ${{ needs.resolve.outputs.upload-artifact == 'true' }}
+    secrets:
+      GIT_PAT: ${{ secrets.GIT_PAT }}
+      ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}

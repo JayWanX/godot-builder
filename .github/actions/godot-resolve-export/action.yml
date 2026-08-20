@@ -1,0 +1,93 @@
+name: Resolve Godot Export Parameters
+description: >-
+  Parse export parameters from workflow_export.json / workflow_build.json /
+  export_presets.cfg and UI inputs, output resolved values for downstream jobs.
+
+inputs:
+  project:
+    description: 待导出项目仓库 owner/repo@ref。留空则用当前仓库。
+    required: false
+    default: ""
+  presets:
+    description: 要导出的预设名（逗号分隔）。留空则读配置文件。
+    required: false
+    default: ""
+  export-type:
+    description: 导出类型（default/auto/official/custom_build）。
+    required: false
+    default: ""
+  official-version:
+    description: official 模式官方版本。
+    required: false
+    default: ""
+  export-config:
+    description: workflow_export.json 路径。
+    required: false
+    default: .github/workflow_export.json
+  build-config:
+    description: workflow_build.json 路径。
+    required: false
+    default: .github/workflow_build.json
+  preset-cfg:
+    description: export_presets.cfg 路径。
+    required: false
+    default: export_presets.cfg
+
+outputs:
+  presets:
+    description: 解析后的预设列表（逗号分隔）。
+    value: ${{ steps.resolve.outputs.presets }}
+  export-type:
+    description: 解析后的导出类型。
+    value: ${{ steps.resolve.outputs.export-type }}
+  upload-artifact:
+    description: 是否上传产物。
+    value: ${{ steps.resolve.outputs.upload-artifact }}
+  editor-platform:
+    description: 导出编辑器平台。
+    value: ${{ steps.resolve.outputs.editor-platform }}
+  template-platforms:
+    description: 需要模板的平台（逗号分隔）。
+    value: ${{ steps.resolve.outputs.template-platforms }}
+  engine-source:
+    description: 引擎来源 owner/repo@ref。
+    value: ${{ steps.resolve.outputs.engine-source }}
+  engine-ref:
+    description: 引擎 ref。
+    value: ${{ steps.resolve.outputs.engine-ref }}
+  repo-safe:
+    description: 引擎仓库名安全形式。
+    value: ${{ steps.resolve.outputs.repo-safe }}
+  need-android:
+    description: 是否需要 Android 导出。
+    value: ${{ steps.resolve.outputs.need-android }}
+  need-ios:
+    description: 是否需要 iOS 导出。
+    value: ${{ steps.resolve.outputs.need-ios }}
+  need-visionos:
+    description: 是否需要 visionOS 导出。
+    value: ${{ steps.resolve.outputs.need-visionos }}
+  project-repo:
+    description: 待导出项目仓库。
+    value: ${{ steps.resolve.outputs.project-repo }}
+  project-ref:
+    description: 待导出项目 ref。
+    value: ${{ steps.resolve.outputs.project-ref }}
+
+runs:
+  using: composite
+  steps:
+    - name: 运行导出参数解析脚本
+      id: resolve
+      shell: bash
+      env:
+        UI_PROJECT: ${{ inputs.project }}
+        UI_PRESETS: ${{ inputs.presets }}
+        UI_TYPE: ${{ inputs.export-type }}
+        UI_VERSION: ${{ inputs.official-version }}
+        EXPORT_CONFIG: ${{ inputs.export-config }}
+        BUILD_CONFIG: ${{ inputs.build-config }}
+        PRESET_CFG: ${{ inputs.preset-cfg }}
+        CURRENT_REPO: ${{ github.repository }}
+        CURRENT_SHA: ${{ github.sha }}
+      run: python "$GITHUB_ACTION_PATH/resolve.py"

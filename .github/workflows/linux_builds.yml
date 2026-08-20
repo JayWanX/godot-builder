@@ -1,0 +1,362 @@
+# ============================================================
+# 工作流名称：🐧 Linux 平台构建
+# 这个工作流专门负责编译 Godot 引擎的 Linux 版本
+# ============================================================
+name: 🐧 Linux Builds
+
+# ============================================================
+# on: 触发方式
+# 【语法讲解】一个工作流可以声明多种触发方式：
+#   workflow_call  -> 被其他工作流用 uses: 调用（复用本工作流）
+#   workflow_dispatch -> 网页手动触发（有输入框）
+# ============================================================
+on:
+  # ----------------------------------------------------------
+  # 【语法】workflow_call：可复用工作流
+  # 被调用时，调用方通过 with: 传 inputs，通过 secrets: 传密钥
+  # inputs 定义的就是"这个工作流能接收哪些参数"
+  # ----------------------------------------------------------
+  workflow_call:
+    inputs:
+      # 引擎源码仓库（owner/repo 格式）
+      repository:
+        description: Godot engine source repository (owner/repo).
+        required: false        # 【语法】非必填
+        default: godotengine/godot  # 【语法】默认值
+        type: string           # 【语法】参数类型：字符串
+
+      # 仓库名安全形式（把 / 换成 _，用于 artifact 命名，因为 artifact 名不能含 /）
+      repo-safe:
+        description: Repository name with '/' replaced by '_' (safe for artifact names).
+        required: false
+        default: ""
+        type: string
+
+      # 引擎 commit SHA（用于缓存 key，保证缓存精准命中）
+      engine-sha:
+        description: Resolved commit SHA of the engine ref (cache key stability).
+        required: false
+        default: ""
+        type: string
+
+      # 引擎引用：分支/tag/commit
+      ref:
+        description: Branch, tag, or commit SHA of the engine source.
+        required: false
+        default: master
+        type: string
+
+      # 构建目标：editor=编辑器 / template_release=发布模板 / template_debug=调试模板
+      target:
+        description: Build target (editor, template_debug, template_release).
+        required: false
+        default: editor
+        type: string
+
+      # 额外的 SCons 编译参数
+      scons-flags:
+        description: Additional SCons flags appended to the build.
+        required: false
+        default: ""
+        type: string
+
+      # SCons 配置文件来源（custom.py）
+      # 【语法】> 是 YAML 的"折叠标量"：多行文本会折叠成一行（换行变成空格）
+      # 支持两种格式：empty=不注入 / file:<路径>=本地文件 / repo:<仓库>@<ref>:<路径>=远程拉取
+      profile:
+        description: >-
+          custom.py source (empty = skip, file:<path>,
+          repo:<owner/repo>[@<ref>]:<path>).
+        required: false
+        default: ""
+        type: string
+
+      # .gdbuild 构建配置文件（控制引擎功能裁剪），格式同上
+      gdbuild:
+        description: >-
+          .gdbuild build profile source (empty = skip, file:<path>,
+          repo:<owner/repo>[@<ref>]:<path>).
+        required: false
+        default: ""
+        type: string
+
+      # 自定义模块仓库列表（逗号分隔）
+      custom-modules:
+        description: Comma-separated custom module repositories in "owner/repo[@ref]" form.
+        required: false
+        default: ""
+        type: string
+
+      # 是否上传构建产物
+      upload-artifact:
+        description: Upload build artifacts.
+        required: false
+        default: true
+        type: boolean          # 【语法】参数类型：布尔值（true/false）
+
+    # 【语法】secrets：被调用工作流声明它需要哪些密钥
+    # 调用方必须通过 secrets: 传入这些密钥，否则无法访问
+    secrets:
+      GIT_PAT:
+        description: "GitHub token for private repositories (repo: mode / custom-modules)."
+        required: false
+      ENCRYPTION_KEY:
+        description: "Godot PCK encryption key (hex). Empty = no PCK encryption."
+        required: false
+
+  # ----------------------------------------------------------
+  # 【语法】workflow_dispatch：网页手动触发
+  # 和 workflow_call 的 inputs 几乎一样，但多了 type: choice（下拉框）
+  # 两者的 inputs 可以重复定义（分别对应两种触发场景）
+  # ----------------------------------------------------------
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: Godot engine source repository (owner/repo).
+        required: false
+        default: godotengine/godot
+        type: string
+      repo-safe:
+        description: Repository name with '/' replaced by '_' (safe for artifact names).
+        required: false
+        default: ""
+        type: string
+      engine-sha:
+        description: Resolved commit SHA of the engine ref (cache key stability).
+        required: false
+        default: ""
+        type: string
+      ref:
+        description: Branch, tag, or commit SHA of the engine source.
+        required: false
+        default: master
+        type: string
+      target:
+        description: Build target.
+        required: false
+        default: editor
+        # 【语法】type: choice = 网页上显示为下拉框，只能选 options 里的值
+        type: choice
+        options: [editor, template_debug, template_release]
+      scons-flags:
+        description: Additional SCons flags appended to the build.
+        required: false
+        default: ""
+        type: string
+      profile:
+        description: >-
+          custom.py source (empty = skip, file:<path>,
+          repo:<owner/repo>[@<ref>]:<path>).
+        required: false
+        default: ""
+        type: string
+      gdbuild:
+        description: >-
+          .gdbuild build profile source (empty = skip, file:<path>,
+          repo:<owner/repo>[@<ref>]:<path>).
+        required: false
+        default: ""
+        type: string
+      custom-modules:
+        description: Comma-separated custom module repositories in "owner/repo[@ref]" form.
+        required: false
+        default: ""
+        type: string
+      upload-artifact:
+        description: Upload build artifacts.
+        required: false
+        default: true
+        type: boolean
+
+# ============================================================
+# permissions: 工作流权限
+# 【语法】最少权限原则：只声明用到的权限
+# ============================================================
+permissions:
+  contents: read    # 读取仓库内容（检出用）
+  actions: write    # 上传构建产物 artifact
+
+# ============================================================
+# jobs: 任务定义
+# ============================================================
+jobs:
+  # ----------------------------------------------------------
+  # build-linux: Linux 构建任务
+  # ----------------------------------------------------------
+  build-linux:
+    # Stay one LTS before latest to increase portability of Linux artifacts.
+    # 【语法】runs-on: 指定在哪个虚拟机上运行
+    # ubuntu-22.04 = 固定用 Ubuntu 22.04（不用最新版，保证产物兼容性更好）
+    runs-on: ubuntu-22.04
+
+    # 【语法】name: ${{ matrix.name }} 用矩阵变量的值作为任务显示名
+    name: ${{ matrix.name }}
+
+    # 【语法】timeout-minutes: 任务超时时间（分钟），超时自动杀掉，防止卡死烧钱
+    timeout-minutes: 120
+
+    # 【语法】strategy + matrix：矩阵构建
+    # 一个任务定义可以展开成多个并行实例，每个实例用矩阵里的一组值
+    # 这里定义了 3 种构建组合（编辑器 / 模板 / 最小模板）
+    strategy:
+      # 【语法】fail-fast: 某个矩阵实例失败时，是否立刻取消其他实例
+      # false = 其他实例继续跑（适合多平台，一个失败不影响其他）
+      fail-fast: false
+      matrix:
+        # 【语法】include: 显式列出每个矩阵组合（比数组更灵活，可带自定义字段）
+        include:
+          # 组合 1：编辑器
+          - name: Editor (target=editor)     # 显示名（供 name: 使用）
+            cache-name: linux-editor        # 缓存/artifact 名后缀
+            target: editor                  # 构建目标
+            scons-flags: compiledb=yes      # 额外编译参数（生成编译数据库供 IDE 用）
+
+          # 组合 2：标准发布模板
+          - name: Template (target=template_release)
+            cache-name: linux-template
+            target: template_release
+            scons-flags: debug_symbols=no   # 不生成调试符号（减小体积）
+
+          # 组合 3：极简模板（禁用大量功能模块，追求最小体积）
+          - name: Minimal template (target=template_release, everything disabled)
+            cache-name: linux-template-minimal
+            target: template_release
+            # 【语法】>- 折叠块标量：下面多行合成一行，用空格连接
+            scons-flags: >-
+              modules_enabled_by_default=no
+              module_text_server_fb_enabled=no
+              disable_3d=yes
+              disable_advanced_gui=yes
+              disable_physics_2d=yes
+              disable_physics_3d=yes
+              deprecated=no
+              minizip=no
+              brotli=no
+              debug_symbols=no
+
+    # ----------------------------------------------------------
+    # 【语法】steps: 步骤列表，从上到下依次执行
+    # 注意每个步骤都有 if: matrix.target == inputs.target 条件
+    # 含义：只有"这个矩阵实例的 target"和"用户选的 target"一致时才执行
+    # 这样用户选 editor 时，只有 editor 那个矩阵实例真正干活，其他实例空转跳过
+    # ----------------------------------------------------------
+    steps:
+      # 步骤 1：检出（下载）引擎源码到 workspace 根
+      # 必须最先检出：引擎 checkout 的 clean: true 会清空根目录，若 GodotBuilder 先检到
+      # 根下的子目录，会被一并删除。引擎先占根，之后 GodotBuilder 再检到独立子目录互不干扰。
+      - name: Checkout engine source
+        # 【语法】if: 条件表达式。true 才执行本步骤
+        if: matrix.target == inputs.target
+        # 【语法】uses: 调用一个 action（这里是官方 checkout action）
+        # @后面是 commit hash（固定版本，保证可复现）
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:   # 【语法】with: 传给 action 的参数
+          repository: ${{ inputs.repository }}      # 从哪个仓库检出（引擎源码）
+          ref: ${{ inputs.ref }}                    # 检出哪个分支/commit
+          token: ${{ secrets.GIT_PAT || github.token }}  # 【语法】|| 或运算：有 GIT_PAT 用它，否则用默认 token
+          submodules: recursive                     # 递归检出子模块（引擎依赖很多子模块）
+
+      # 步骤 2：检出 GodotBuilder 工具仓（本地 actions / 辅助脚本所在）
+      # 引擎已占根；把 GodotBuilder 检出到子目录 godot_builder/，本地 action 用
+      # ./godot_builder/.github/actions/... 前缀引用，避免与根目录引擎源码冲突。
+      - name: 检出 GodotBuilder（本地 actions 用）
+        if: matrix.target == inputs.target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}   # 检出当前触发本工作流的 commit
+          path: godot_builder      # 检出到 godot_builder/ 子目录
+
+      # 步骤 3：安装系统依赖（Linux 需要 libwayland）
+      - name: Setup dependencies
+        if: matrix.target == inputs.target
+        # 【语法】run: 直接运行 shell 命令（无 uses 时的执行方式）
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install libwayland-bin
+
+      # 步骤 4：恢复编译缓存（加速二次编译）
+      - name: Restore Godot build cache
+        if: matrix.target == inputs.target
+        uses: ./godot_builder/.github/actions/godot-cache-restore   # 【语法】./ 相对路径调用本地 action
+        with:
+          # 【语法】|| 或运算：repo-safe 非空用它，否则用当前仓库名
+          cache-name: ${{ inputs.repo-safe || github.event.repository.name }}-${{ matrix.cache-name }}
+          engine-sha: ${{ inputs.engine-sha }}
+        # 【语法】continue-on-error: 本步骤失败也不中断任务（缓存恢复失败可容忍）
+        continue-on-error: true
+
+      # 步骤 5：安装 Python 和 SCons（编译工具链）
+      - name: Setup Python and SCons
+        if: matrix.target == inputs.target
+        uses: ./godot_builder/.github/actions/godot-deps
+
+      # 步骤 6：注入编译配置（custom.py / .gdbuild / 自定义模块 / 加密环境变量）
+      - name: Inject build configuration (custom.py / .gdbuild / custom modules / env)
+        if: matrix.target == inputs.target
+        # 【语法】id: 给步骤起别名，后续用 steps.<id>.outputs 引用它的输出
+        id: inject
+        uses: ./godot_builder/.github/actions/godot-config-inject
+        with:
+          profile: ${{ inputs.profile }}            # SCons 配置来源
+          gdbuild: ${{ inputs.gdbuild }}            # .gdbuild 配置来源
+          custom-modules: ${{ inputs.custom-modules }}  # 自定义模块
+          encryption-key: ${{ secrets.ENCRYPTION_KEY }}  # 加密密钥
+          repo-token: ${{ secrets.GIT_PAT }}        # 私有仓库访问令牌
+
+      # 步骤 7：运行辅助脚本（确保标准头文件显式包含，兼容新版编译器）
+      # 注：godot_builder/ 已在步骤 2 完整检出，脚本路径无需再额外检出
+      - name: 确保标准头显式包含（兼容新版编译器）
+        if: matrix.target == inputs.target
+        shell: bash
+        run: python godot_builder/.github/scripts/ensure_standard_includes.py
+
+      # 步骤 8：真正执行编译（核心步骤）
+      - name: Compilation
+        if: matrix.target == inputs.target
+        uses: ./godot_builder/.github/actions/godot-build   # 复用本地编译 action
+        with:
+          # 【语法】把矩阵参数和用户输入拼在一起作为编译参数
+          scons-flags: ${{ matrix.scons-flags }} ${{ inputs.scons-flags }}
+          platform: linuxbsd          # Godot 对 Linux 平台的内部代号
+          target: ${{ inputs.target }}    # 构建目标（editor/template）
+          build-profile-path: ${{ steps.inject.outputs.build-profile-path }}  # 【语法】引用上一步输出的值
+          scons-profile-path: ${{ steps.inject.outputs.scons-profile-path }}
+          custom-modules-dir: ${{ steps.inject.outputs.custom-modules-dir }}
+
+      # 步骤 9：保存编译缓存
+      - name: Save Godot build cache
+        if: matrix.target == inputs.target
+        uses: ./godot_builder/.github/actions/godot-cache-save
+        with:
+          cache-name: ${{ inputs.repo-safe || github.event.repository.name }}-${{ matrix.cache-name }}
+          engine-sha: ${{ inputs.engine-sha }}
+        continue-on-error: true
+
+      # 步骤 10：整理产物（删临时文件、剥离调试符号、加执行权限）
+      - name: Prepare artifact
+        # 【语法】&& 与运算：两个条件都满足才执行
+        if: matrix.target == inputs.target && inputs.upload-artifact
+        shell: bash
+        run: |
+          rm -rf ./bin/build_deps          # 删掉构建依赖目录
+          strip bin/godot.* || true        # 剥离调试符号（减小体积），失败也继续
+          chmod +x bin/godot.*             # 加可执行权限
+
+      # 步骤 11：上传构建产物（artifact）
+      - name: Upload artifact
+        uses: ./godot_builder/.github/actions/upload-artifact   # 复用本地上传 action
+        if: matrix.target == inputs.target && inputs.upload-artifact
+        with:
+          # artifact 命名规则：仓库安全名-缓存名（如 godotengine_godot-linux-template）
+          name: ${{ inputs.repo-safe || github.event.repository.name }}-${{ matrix.cache-name }}
+
+      # 步骤 12：冒烟测试（验证编译出的二进制能运行）
+      - name: Smoke test
+        if: matrix.target == inputs.target
+        shell: bash
+        run: |
+          # 【语法】$() 命令替换；ls -t 按时间排序；grep -v 排除 .dSYM
+          BIN=$(ls -t bin/godot.* 2>/dev/null | grep -v '\.dSYM' | head -1)
+          [ -n "$BIN" ] || { echo "::error::no godot binary found in bin/"; exit 1; }  # 没找到就报错
+          "$BIN" --version     # 运行 --version 验证

@@ -1,0 +1,274 @@
+name: Godot Export
+description: 使用 Godot 编辑器与导出模板导出 Godot 项目。
+
+inputs:
+  project-path:
+    description: Godot 项目路径（根目录需含 project.godot 与 export_presets.cfg）。
+    required: true
+  presets:
+    description: >-
+      要导出的预设名，逗号分隔。空=自动检测项目 export_presets.cfg 中所有可导出预设。
+    required: false
+    default: ""
+  target:
+    description: '导出类型：template_release（--export-release）或 template_debug（--export-debug）。'
+    required: true
+    type: choice
+    options: [template_release, template_debug]
+  editor-mode:
+    description: '如何获取编辑器：official（下载官方版）或 custom_build（使用提供的二进制）。'
+    required: false
+    default: official
+    type: choice
+    options: [official, custom_build]
+  editor-version:
+    description: editor-mode=official 时的 Godot 发布标签，如 4.7.2-stable。
+    required: false
+    default: ""
+  editor-platform:
+    description: 官方编辑器下载平台（须与 runner 系统匹配）。
+    required: false
+    default: linux.x86_64
+  editor-path:
+    description: editor-mode=custom_build 时的编辑器可执行文件路径。
+    required: false
+    default: ""
+  templates-dir:
+    description: 包含导出模板的目录（替换 @TEMPLATES_DIR@）。
+    required: true
+  templates-platforms:
+    description: >-
+      要保留的模板平台，逗号分隔（如 windows,linux,macos,android,ios,visionos,web）。
+      仅 official 模式下用于裁剪下载的整合包；空则全部保留。
+    required: false
+    default: ""
+  encryption-key:
+    description: >-
+      PCK 加密密钥。非空则强制 encrypt_pck=true 并传递
+      --script-encryption-key；空则强制 encrypt_pck=false。
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: 校验输入参数
+      shell: bash
+      env:
+        INPUT_PROJECT_PATH: ${{ inputs.project-path }}
+        INPUT_EDITOR_MODE: ${{ inputs.editor-mode }}
+        INPUT_EDITOR_VERSION: ${{ inputs.editor-version }}
+        INPUT_EDITOR_PATH: ${{ inputs.editor-path }}
+        INPUT_TEMPLATES_DIR: ${{ inputs.templates-dir }}
+        INPUT_ENCRYPTION_KEY: ${{ inputs.encryption-key }}
+      run: |
+        [ -d "$INPUT_PROJECT_PATH" ] || { echo "::error::project-path 不存在: $INPUT_PROJECT_PATH"; exit 1; }
+        if [ "$INPUT_EDITOR_MODE" = "custom_build" ]; then
+          [ -d "$INPUT_TEMPLATES_DIR" ] || { echo "::error::custom_build 模式需提供 templates-dir: $INPUT_TEMPLATES_DIR"; exit 1; }
+        else
+          # official 模式由本 action 下载官方模板并创建 templates-dir
+          mkdir -p "$INPUT_TEMPLATES_DIR"
+        fi
+        # export_presets.cfg 固定位于 project-path 根目录
+        SOURCE_PRESETS="$INPUT_PROJECT_PATH/export_presets.cfg"
+        [ -f "$SOURCE_PRESETS" ] || { echo "::error::presets 文件不存在: $SOURCE_PRESETS"; exit 1; }
+        echo "SOURCE_PRESETS=$SOURCE_PRESETS" >> "$GITHUB_ENV"
+        if [ "$INPUT_EDITOR_MODE" = "official" ]; then
+          [ -n "$INPUT_EDITOR_VERSION" ] || { echo "::error::official 模式需指定 editor-version"; exit 1; }
+          case "$INPUT_EDITOR_VERSION" in
+            [A-Za-z0-9._-]*) ;;
+            *) echo "::error::editor-version 含非法字符"; exit 1 ;;
+          esac
+        else
+          [ -x "$INPUT_EDITOR_PATH" ] || { echo "::error::custom_build 模式需提供可执行 editor-path"; exit 1; }
+        fi
+        if [ -n "$INPUT_ENCRYPTION_KEY" ] && ! [[ "$INPUT_ENCRYPTION_KEY" =~ ^[0-9a-fA-F]{16,}$ ]]; then
+          echo "::error::encryption-key 必须为十六进制且至少 16 位"; exit 1
+        fi
+
+    - name: 安装编辑器运行时库（Linux）
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libgl1 libegl1 libxkbcommon0 libxkbcommon-x11-0 libxcb-cursor0 \
+          libwayland-client0 libwayland-cursor0 libwayland-egl1 libxcursor1 libxinerama1 \
+          libxi6 libxrandr2 libasound2 libpulse0 unzip
+
+    - name: 准备编辑器（official）
+      if: inputs.editor-mode == 'official'
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.editor-version }}
+        INPUT_PLATFORM: ${{ inputs.editor-platform }}
+        RUNNER_OS: ${{ runner.os }}
+      run: |
+        curl -L --retry 3 -o editor.zip "https://github.com/godotengine/godot/releases/download/${INPUT_VERSION}/Godot_v${INPUT_VERSION}_${INPUT_PLATFORM}.zip"
+        unzip -o editor.zip
+        if [ "$RUNNER_OS" = "macOS" ]; then
+          # macOS 官方编辑器为 .app bundle，可执行文件在 Contents/MacOS 下
+          APP=$(ls -d Godot.app 2>/dev/null | head -1)
+          if [ -n "$APP" ]; then
+            BIN="$APP/Contents/MacOS/Godot"
+            chmod +x "$BIN"
+            "$BIN" --version
+            echo "EDITOR=$PWD/$BIN" >> "$GITHUB_ENV"
+          else
+            chmod +x Godot_v${INPUT_VERSION}_${INPUT_PLATFORM}
+            ./Godot_v${INPUT_VERSION}_${INPUT_PLATFORM} --version
+            echo "EDITOR=$PWD/Godot_v${INPUT_VERSION}_${INPUT_PLATFORM}" >> "$GITHUB_ENV"
+          fi
+        else
+          chmod +x Godot_v${INPUT_VERSION}_${INPUT_PLATFORM}
+          ./Godot_v${INPUT_VERSION}_${INPUT_PLATFORM} --version
+          echo "EDITOR=$PWD/Godot_v${INPUT_VERSION}_${INPUT_PLATFORM}" >> "$GITHUB_ENV"
+        fi
+
+    - name: 准备编辑器（custom_build）
+      if: inputs.editor-mode == 'custom_build'
+      shell: bash
+      env:
+        INPUT_EDITOR_PATH: ${{ inputs.editor-path }}
+      run: |
+        cp "$INPUT_EDITOR_PATH" ./godot-editor
+        chmod +x ./godot-editor
+        ./godot-editor --version
+        echo "EDITOR=$PWD/godot-editor" >> "$GITHUB_ENV"
+
+    - name: 准备模板（official）
+      if: inputs.editor-mode == 'official'
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.editor-version }}
+        INPUT_PLATFORMS: ${{ inputs.templates-platforms }}
+        INPUT_TEMPLATES_DIR: ${{ inputs.templates-dir }}
+      run: |
+        # 官方模式：下载官方导出模板整合包，解压到 Godot 官方默认模板目录
+        # （Linux ~/.local/share/godot/export_templates/<version>/），由编辑器按版本自动匹配。
+        EDITOR_VERSION=$("$EDITOR" --version 2>/dev/null | sed 's/^/> /' | head -n1 | sed 's/^> //')
+        # Godot --version 输出形如 "4.5.2.stable.official"
+        BASE_VERSION=$(printf '%s' "$EDITOR_VERSION" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[a-z]+' | head -n1)
+        [ -n "$BASE_VERSION" ] || BASE_VERSION="$INPUT_VERSION"
+        echo "editor version=$EDITOR_VERSION → templates dir version=$BASE_VERSION"
+
+        GLOBAL_DIR="$HOME/.local/share/godot/export_templates/$BASE_VERSION"
+        mkdir -p "$GLOBAL_DIR"
+        curl -L --retry 3 -o export_templates.tpz \
+          "https://github.com/godotengine/godot/releases/download/${INPUT_VERSION}/Godot_v${INPUT_VERSION}_export_templates.tpz"
+        rm -rf tmp_templates
+        mkdir -p tmp_templates
+        unzip -o export_templates.tpz -d tmp_templates
+        rm -f export_templates.tpz
+
+        # tpz 内可能还有一层 templates/ 子目录，先压平到 tmp_templates 根
+        if [ -d tmp_templates/templates ]; then
+          mv tmp_templates/templates/* tmp_templates/ 2>/dev/null || true
+        fi
+
+        # 按需平台筛选（默认保留全部）；官方模板命名形如 windows_release_x86_64.exe、macos.zip。
+        # 只需文件名包含平台关键字即保留：这里只负责省磁盘，宁可多留不可漏留，
+        # 漏掉会把导出所需的模板删掉导致导出失败（例如 macos.zip 不匹配 *_macos*）。
+        NEEDED="${INPUT_PLATFORMS}"
+        if [ -z "$NEEDED" ]; then
+          mv tmp_templates/* "$GLOBAL_DIR"/ 2>/dev/null || true
+        else
+          for p in $(printf '%s' "$NEEDED" | tr ',' ' '); do
+            [ -z "$p" ] && continue
+            # 匹配 tmp_templates 下文件名包含平台关键字的模板文件（含子目录中的）
+            find tmp_templates -maxdepth 2 -type f -name "*${p}*" -exec mv -f {} "$GLOBAL_DIR"/ \; 2>/dev/null || true
+          done
+        fi
+        rm -rf tmp_templates
+
+        # templates-dir 在 official 模式无模板，仅确保存在
+        mkdir -p "$INPUT_TEMPLATES_DIR"
+        echo "--- 官方模板目录保留 ---"
+        ls -la "$GLOBAL_DIR"
+        rm -f export_templates.tpz
+
+    - name: 解析预设（为空时自动检测全部）
+      shell: bash
+      env:
+        INPUT_PRESETS: ${{ inputs.presets }}
+      run: |
+        if [ -n "$INPUT_PRESETS" ]; then
+          PRESET_LIST="$INPUT_PRESETS"
+        else
+          # 读取 export_presets.cfg 全部 [preset.N] 的 name
+          PRESET_LIST=$(grep '^name="' "$SOURCE_PRESETS" | sed 's/^name="//; s/"$//' | paste -sd ',' -)
+          [ -n "$PRESET_LIST" ] || { echo "::error::未在 export_presets.cfg 找到任何 preset"; exit 1; }
+          echo "自动解析到预设: $PRESET_LIST"
+        fi
+        echo "PRESET_LIST=$PRESET_LIST" >> "$GITHUB_ENV"
+
+    - name: 在项目中生成 export_presets.cfg
+      shell: bash
+      env:
+        INPUT_PROJECT_PATH: ${{ inputs.project-path }}
+        INPUT_ENCRYPTION_KEY: ${{ inputs.encryption-key }}
+        INPUT_EDITOR_MODE: ${{ inputs.editor-mode }}
+      run: |
+        # export_presets.cfg 是项目根目录的真实导出配置（官方模板由编辑器按版本在默认模板目录匹配，
+        # 无需 custom_template / @TEMPLATES_DIR@）。此处仅处理可选日志与加密开关，不改动其它字段。
+        # 官方模板导出（official）或未提供加密密钥时，自动关闭 GDScript/目录加密：
+        # 官方编辑器在「encrypt+embed_pck」组合下可能只完成打包却静默写不出可执行文件（返回 0），
+        # 动态置 false 可保证导出产物正常落盘，且不影响 custom_build 场景下的真实加密能力。
+        mkdir -p "$INPUT_PROJECT_PATH/bin"
+        CFG="$INPUT_PROJECT_PATH/export_presets.cfg"
+        [ -f "$CFG" ] || { echo "::error::未找到导出配置 $CFG"; exit 1; }
+        if [ "$INPUT_EDITOR_MODE" = "official" ] || [ -z "$INPUT_ENCRYPTION_KEY" ]; then
+          sed -i 's/encrypt_pck=true/encrypt_pck=false/; s/encrypt_directory=true/encrypt_directory=false/' "$CFG"
+        fi
+        echo "--- export_presets.cfg ---"
+        grep -E 'name=|encrypt_|export_path=' "$CFG"
+
+    - name: 导入项目资源（生成 .godot 缓存）
+      shell: bash
+      env:
+        INPUT_PROJECT_PATH: ${{ inputs.project-path }}
+      run: |
+        # 导出前先导入资源，生成 .godot/imported 缓存，否则导出因缺字体/资源导入失败
+        "$EDITOR" --headless --path "$INPUT_PROJECT_PATH" --import 2>&1 | tail -20 || true
+        echo "--- .godot/imported ---"
+        ls -la "$INPUT_PROJECT_PATH/.godot/imported" 2>/dev/null | head -20 || true
+
+    - name: 逐个导出预设
+      shell: bash
+      env:
+        INPUT_PROJECT_PATH: ${{ inputs.project-path }}
+        INPUT_TARGET: ${{ inputs.target }}
+        INPUT_ENCRYPTION_KEY: ${{ inputs.encryption-key }}
+        INPUT_EDITOR_MODE: ${{ inputs.editor-mode }}
+      run: |
+        FLAG="--export-release"
+        [ "$INPUT_TARGET" = "template_debug" ] && FLAG="--export-debug"
+        # official 或密钥为空时不传 --script-encryption-key（与上面关闭加密对齐）；
+        # 仅 custom_build 且密钥非空时才传入，此时为真实的脚本加密导出。
+        # 用「按逗号拆数组 + for」替代「管道 + while read」：dispatch 下单值预设（无逗号）
+        # 不会被管道 EOF 吞掉；同时让单个预设失败不致命，依次导完所有预设，
+        # 避免一个预设失败导致剩余预设被 set -e 静默跳过。
+        IFS=',' read -r -a preset_array <<< "$PRESET_LIST"
+        failed_presets=""
+        for preset in "${preset_array[@]}"; do
+          preset_trim="$(printf '%s' "$preset" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+          [ -z "$preset_trim" ] && continue
+          echo "==> $FLAG 预设：$preset_trim"
+          if [ "$INPUT_EDITOR_MODE" != "official" ] && [ -n "$INPUT_ENCRYPTION_KEY" ]; then
+            "$EDITOR" --headless --path "$INPUT_PROJECT_PATH" --script-encryption-key "$INPUT_ENCRYPTION_KEY" $FLAG "$preset_trim"
+          else
+            "$EDITOR" --headless --path "$INPUT_PROJECT_PATH" $FLAG "$preset_trim"
+          fi
+          if [ $? -eq 0 ]; then
+            echo "==> 预设 $preset_trim 导出成功"
+          else
+            echo "::error::预设 $preset_trim 导出失败"
+            failed_presets="$failed_presets,$preset_trim"
+          fi
+        done
+        echo "--- bin/ ---"
+        ls -lh "$INPUT_PROJECT_PATH/bin"
+        if [ -n "$failed_presets" ]; then
+          echo "::error::以下预设导出失败，已跳过后续处理:${failed_presets}"
+          exit 1
+        fi
+        echo "全部预设导出成功"
