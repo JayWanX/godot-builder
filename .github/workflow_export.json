@@ -1,0 +1,6 @@
+{
+  "export_presets": ["Windows Desktop", "Linux/X11", "macOS"],
+  "export_type": "official",
+  "official_version": "4.7.2-stable",
+  "upload_artifact": true
+}

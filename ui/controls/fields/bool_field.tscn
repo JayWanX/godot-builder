@@ -1,0 +1,43 @@
+[gd_scene format=3 uid="uid://do4vvkns3re6w"]
+
+[ext_resource type="Script" uid="uid://cimh5ere0kpwk" path="res://ui/controls/fields/bool_field.gd" id="1"]
+[ext_resource type="Texture2D" uid="uid://bjfjlm6avdnng" path="res://assets/icons/reset.svg" id="2_gdjn4"]
+
+[node name="BoolField" type="HBoxContainer" unique_id=1285005958 node_paths=PackedStringArray("check_button", "display_name_label", "reset_button")]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -26.5
+offset_top = -12.0
+offset_right = 26.5
+offset_bottom = 12.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+script = ExtResource("1")
+check_button = NodePath("CheckButton")
+display_name_label = NodePath("DisplayName")
+reset_button = NodePath("ResetButton")
+
+[node name="DisplayName" type="Label" parent="." unique_id=760178865]
+layout_mode = 2
+vertical_alignment = 1
+
+[node name="CheckButton" type="CheckButton" parent="." unique_id=798252890]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+
+[node name="ResetButton" type="Button" parent="." unique_id=1683146283]
+visible = false
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "恢复默认值"
+icon = ExtResource("2_gdjn4")
+flat = true
+
+[connection signal="toggled" from="CheckButton" to="." method="_on_check_button_toggled"]
+[connection signal="pressed" from="ResetButton" to="." method="reset_control"]
