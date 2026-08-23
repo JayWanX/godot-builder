@@ -1,0 +1,46 @@
+[gd_scene format=3 uid="uid://eakhuq7ih1lq"]
+
+[ext_resource type="Script" uid="uid://cmebvgeqx76vr" path="res://ui/windows/config_preview_window.gd" id="1_wy0y4"]
+[ext_resource type="Script" uid="uid://d1dntfqxttmlu" path="res://ui/windows/profile_highlighter.gd" id="2_nq2tj"]
+
+[sub_resource type="SyntaxHighlighter" id="SyntaxHighlighter_nq2tj"]
+script = ExtResource("2_nq2tj")
+metadata/_custom_type_script = "uid://d1dntfqxttmlu"
+
+[node name="ConfigPreviewWindow" type="Window" unique_id=1494701274 node_paths=PackedStringArray("preview_code_edit")]
+oversampling_override = 1.0
+initial_position = 1
+size = Vector2i(640, 360)
+visible = false
+transient = true
+popup_window = true
+minimize_disabled = true
+maximize_disabled = true
+min_size = Vector2i(640, 360)
+max_size = Vector2i(1280, 720)
+script = ExtResource("1_wy0y4")
+preview_code_edit = NodePath("PreviewCodeEdit")
+
+[node name="PreviewCodeEdit" type="CodeEdit" parent="." unique_id=668822546]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_type_variation = &"PreviewCodeEdit"
+context_menu_enabled = false
+emoji_menu_enabled = false
+wrap_mode = 1
+scroll_fit_content_width = true
+minimap_draw = true
+syntax_highlighter = SubResource("SyntaxHighlighter_nq2tj")
+symbol_tooltip_on_hover = true
+line_folding = true
+gutters_draw_line_numbers = true
+gutters_draw_fold_gutter = true
+code_completion_enabled = true
+indent_automatic = true
+
+[connection signal="close_requested" from="." to="." method="_on_close_requested"]

@@ -1,0 +1,579 @@
+# ============================================================
+# 工作流名称（显示在 GitHub Actions 页面上的名字）
+# 📦 表示这是一个"导出/打包"相关的工作流
+# ============================================================
+name: 📦 Godot Project Export
+
+# ============================================================
+# on: 定义"什么情况下会触发这个工作流"
+# 这里只用了一种触发方式：
+#   workflow_dispatch -> 在 GitHub 网页上手动点击"Run workflow"按钮触发
+# ============================================================
+on:
+  workflow_dispatch:
+    inputs:
+      # 待导出项目仓库。格式：所有者/仓库名@分支（如 myorg/myproj@main）
+      # 这个项目提供：project.godot、export_presets.cfg、build/ 编译配置
+      # 留空 = 导出当前所在的仓库（用触发时的 commit）
+      project:
+        description: >-
+          待导出项目仓库 owner/repo@ref。留空则导出当前仓库（github.sha）。
+        required: false
+        default: ""
+        type: string
+
+      # 要导出的预设名（来自被导出项目 export_presets.cfg 里的 name= 字段）
+      # 逗号分隔可传多个。留空则读配置文件里的全部预设
+      # 例：presets = "Windows Desktop,macOS"
+      presets:
+        description: >-
+          要导出的预设名（被导出项目 export_presets.cfg 中的 name，逗号分隔）。
+          留空则读 .github/workflow_export.json。
+        required: false
+        default: ""
+        type: string
+
+      # 导出类型（决定用官方整套还是自编译整套）
+      #   default       -> 读 workflow_export.json 里的 export_type
+      #   auto          -> 自动判断：有 workflow_build.json 则 custom_build，否则 official
+      #   official      -> 用官方编辑器 + 官方模板（不编译任何东西）
+      #   custom_build  -> 先调用 build 工作流编译同源编辑器 + 模板，再导出
+      export-type:
+        description: >-
+          导出类型。official=使用官方编辑器与官方模板（不编译）；custom_build=先调用 build 工作流
+          编译同源编辑器与模板；auto=检测仓库内是否有 workflow_build.json（有则 custom_build，无则 official）。
+          留空（default）则读 workflow_export.json。
+        required: false
+        default: default
+        type: choice                 # 下拉选择框类型
+        options: [default, auto, official, custom_build]  # 可选值列表
+
+      # official 模式下的官方引擎版本号（如 4.7.1-stable）
+      # 用于下载对应版本的官方编辑器 zip 和官方模板包
+      # 这个版本号只跟"官方下载"有关，和待导出项目的 source 无关
+      official-version:
+        description: >-
+          official 模式下官方编辑器版本（如 4.7.1-stable）。留空则读 workflow_export.json 的 official_version。
+          与 source 无关，仅用于下载官方编辑器与编译官方模板。
+        required: false
+        default: ""
+        type: string
+
+# ============================================================
+# permissions: 声明这个工作流需要哪些权限
+# ============================================================
+permissions:
+  contents: read    # 可以读取仓库内容（检出代码用）
+  actions: write    # 可以写 actions（下载/上传构建产物 artifact 用）
+
+# ============================================================
+# concurrency: 并发控制，防止同一分支同时跑多个相同导出
+# ============================================================
+concurrency:
+  group: export-${{ github.ref }}   # 分组依据：当前分支/ref
+  cancel-in-progress: false         # 已有任务在跑时不取消，排队等待
+
+# ============================================================
+# jobs: 定义这个工作流要执行的所有任务（job）
+# 整体流程：
+#   resolve（解析参数）
+#     ├─→ build-editor / build-templates（custom_build 时编译编辑器与模板）
+#     ├─→ export-desktop（桌面 + Web 导出）
+#     ├─→ export-android（Android 导出）
+#     └─→ export-ios（iOS 导出）
+# ============================================================
+jobs:
+  # ----------------------------------------------------------
+  # resolve: "解析导出参数"任务
+  # 作用：读取配置文件 + 用户输入，算出导出需要的全部参数并输出
+  # ============================================================
+  resolve:
+    name: 🔍 解析导出参数
+    runs-on: ubuntu-latest    # 在 Ubuntu 最新版虚拟机上运行
+    outputs:                  # 声明本任务要输出的参数（给下游任务引用）
+      presets: ${{ steps.resolve.outputs.presets }}                    # 预设名列表（逗号分隔）
+      export-type: ${{ steps.resolve.outputs.export-type }}            # 导出类型
+      upload-artifact: ${{ steps.resolve.outputs.upload-artifact }}    # 是否上传产物
+      editor-platform: ${{ steps.resolve.outputs.editor-platform }}    # 导出编辑器平台
+      template-platforms: ${{ steps.resolve.outputs.template-platforms }} # 需要模板的平台
+      engine-source: ${{ steps.resolve.outputs.engine-source }}        # 引擎来源
+      engine-ref: ${{ steps.resolve.outputs.engine-ref }}              # 引擎引用
+      repo-safe: ${{ steps.resolve.outputs.repo-safe }}                # 引擎仓库安全名
+      need-android: ${{ steps.resolve.outputs.need-android }}          # 是否需要 Android
+      need-ios: ${{ steps.resolve.outputs.need-ios }}                  # 是否需要 iOS
+      need-visionos: ${{ steps.resolve.outputs.need-visionos }}          # 是否需要 visionOS
+      project-repo: ${{ steps.resolve.outputs.project-repo }}          # 待导出项目仓库
+      project-ref: ${{ steps.resolve.outputs.project-ref }}            # 待导出项目引用
+    steps:                    # 本任务的步骤列表
+      # 第 1 步：检出（下载）本仓库
+      # 完整检出：因为要用 uses: ./.github/actions/godot-resolve-export 引用本地 action，
+      # 且要读配置文件与 export_presets.cfg，完整检出才能保证 action 目录可用
+      - name: 检出 GodotBuilder
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1（官方检出 action）
+        with:
+          ref: ${{ github.sha }}    # 检出当前触发本工作流的 commit
+
+      # 第 2 步：调用自定义解析 action（Python 脚本）算出全部导出参数
+      - name: 解析导出配置
+        id: resolve              # 给本步骤起 id，供 outputs 引用
+        uses: ./.github/actions/godot-resolve-export   # 复用自定义 action
+        with:                    # 把用户输入 + 配置路径传给 action
+          project: ${{ inputs.project }}          # 待导出项目
+          presets: ${{ inputs.presets }}          # 预设
+          export-type: ${{ inputs.export-type }}  # 导出类型
+          official-version: ${{ inputs.official-version }}  # 官方版本
+          export-config: .github/workflow_export.json    # 导出配置文件路径
+          build-config: .github/workflow_build.json      # 构建配置文件路径
+          preset-cfg: export_presets.cfg                 # 预设文件路径
+
+  # ============================================================
+  # 下面的任务是"编译类"任务：仅在 custom_build 时运行
+  # ============================================================
+
+  # ----------------------------------------------------------
+  # build-editor: 编译导出用的编辑器（如 Linux 编辑器）
+  # 仅当导出类型为 custom_build 时执行（因为要自编译编辑器）
+  # ----------------------------------------------------------
+  build-editor:
+    name: 🔨 编译导出编辑器（${{ needs.resolve.outputs.editor-platform }}）
+    needs: resolve                        # 依赖 resolve 先完成
+    if: needs.resolve.outputs.export-type == 'custom_build'  # 仅 custom_build 才跑
+    uses: ./.github/workflows/build.yml   # 复用构建工作流
+    with:
+      project: ${{ needs.resolve.outputs.project-repo }}@${{ needs.resolve.outputs.project-ref }}  # 待导出项目
+      source: ${{ needs.resolve.outputs.engine-source }}    # 引擎来源
+      ref: ${{ needs.resolve.outputs.engine-ref }}          # 引擎引用
+      target: editor                       # 编译目标：编辑器
+      platform: ${{ needs.resolve.outputs.editor-platform }}  # 编辑器平台
+    secrets:
+      GIT_PAT: ${{ secrets.GIT_PAT }}
+      SERVICE_ACCOUNT_KEY: ${{ secrets.SERVICE_ACCOUNT_KEY }}
+      ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+
+  # ----------------------------------------------------------
+  # build-templates: 编译导出需要的模板（如 template_release）
+  # 仅当导出类型为 custom_build 时执行（因为要自编译模板）
+  # ----------------------------------------------------------
+  build-templates:
+    name: 🔨 编译导出模板
+    needs: resolve
+    # 仅 custom_build 需编译模板；official 由 godot-export 下载官方模板
+    if: needs.resolve.outputs.export-type == 'custom_build'
+    uses: ./.github/workflows/build.yml
+    with:
+      project: ${{ needs.resolve.outputs.project-repo }}@${{ needs.resolve.outputs.project-ref }}
+      source: ${{ needs.resolve.outputs.engine-source }}
+      ref: ${{ needs.resolve.outputs.engine-ref }}
+      target: template_release            # 编译目标：发布版模板
+      platform: ${{ needs.resolve.outputs.template-platforms }}  # 所有需要模板的平台
+    secrets:
+      GIT_PAT: ${{ secrets.GIT_PAT }}
+      SERVICE_ACCOUNT_KEY: ${{ secrets.SERVICE_ACCOUNT_KEY }}
+      ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+
+  # ============================================================
+  # 下面是"导出类"任务：把项目导出为各平台成品
+  # ============================================================
+
+  # ----------------------------------------------------------
+  # export-desktop: 导出桌面平台（Windows/Linux/macOS）+ Web
+  # 运行在 Ubuntu 上（跨平台导出用 Linux 编辑器即可）
+  # ----------------------------------------------------------
+  export-desktop:
+    name: 📦 导出桌面/Web
+    # always() 打破"依赖被 skip job→连带 skip"的规则：
+    #   - official：build-editor/build-templates 都被跳过（因为不编译），
+    #     but 我们要让本任务仍然运行，所以用 always()
+    #   - custom_build：要求 build-editor 和 build-templates 都真正成功
+    needs: [resolve, build-editor, build-templates]
+    if: >-
+      always() && (
+        needs.resolve.outputs.export-type == 'official' ||
+        (needs.build-editor.result == 'success' && needs.build-templates.result == 'success')
+      )
+    runs-on: ubuntu-22.04      # Ubuntu 22.04 虚拟机（导出环境）
+    steps:                     # 本任务的步骤列表
+      # 第 1 步：检出待导出项目到 project/ 目录
+      - name: 检出待导出项目
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ needs.resolve.outputs.project-repo }}   # 从待导出项目仓库检出
+          ref: ${{ needs.resolve.outputs.project-ref }}           # 检出对应分支/commit
+          token: ${{ secrets.GIT_PAT || github.token }}           # 私有仓库需要令牌
+          path: project                                           # 检出到 project/ 目录
+
+      # 第 2 步：检出本仓库的 godot-export action（供后续调用）
+      - name: 检出 GodotBuilder 辅助配置
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}            # 当前 commit
+          path: godot_builder               # 检出到 godot_builder/ 目录
+          filter: blob:none                 # 优化：只下载需要的文件
+          sparse-checkout: |                # 只检出 godot-export action
+            .github/actions/godot-export
+
+      # 第 3 步：下载构建好的模板（custom_build 时才有）
+      # 从 build 任务上传的 artifact 里按模式匹配下载
+      - name: 下载构建的模板
+        if: needs.resolve.outputs.export-type == 'custom_build'   # 仅 custom_build
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          path: templates                          # 下载到 templates/ 目录
+          pattern: "${{ needs.resolve.outputs.repo-safe }}-*-template*"  # 匹配模板 artifact 名
+          merge-multiple: true                     # 多个 artifact 合并到一个目录
+
+      # 第 4 步：下载 custom_build 编译器（Linux 编辑器）
+      - name: 下载 custom_build 编辑器
+        if: needs.resolve.outputs.export-type == 'custom_build'
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: ${{ needs.resolve.outputs.repo-safe }}-linux-editor   # 匹配编辑器 artifact 名
+          path: editor-bin                      # 下载到 editor-bin/ 目录
+
+      # 第 5 步：把下载的编辑器重命名为统一的 godot-editor 名
+      # 这样后续 godot-export 能用固定路径引用编辑器
+      - name: 下载后再将编辑器重命名为 godot-editor
+        if: needs.resolve.outputs.export-type == 'custom_build'
+        shell: bash
+        run: |
+          F=$(ls editor-bin/godot.linuxbsd.editor* | head -1)   # 找到编辑器文件
+          [ -n "$F" ] || { ls -la editor-bin; echo "::error::未找到 linux 编辑器产物"; exit 1; }  # 找不到则报错
+          mv "$F" editor-bin/godot-editor      # 重命名为 godot-editor
+          chmod +x editor-bin/godot-editor     # 添加可执行权限
+
+      # 第 6 步：核心导出步骤，复用 godot-export action
+      # 它会：准备编辑器、准备模板、生成 export_presets.cfg、逐个预设导出
+      - name: 导出（复用 godot-export）
+        uses: ./godot_builder/.github/actions/godot-export
+        with:
+          project-path: project                        # 待导出项目路径
+          presets: ${{ needs.resolve.outputs.presets }}  # 要导出的预设
+          target: template_release                     # 导出类型：发布版
+          # 根据导出类型选择编辑器模式
+          #   official     -> 'official'（下载官方编辑器）
+          #   custom_build -> 'custom_build'（用自编译编辑器）
+          editor-mode: ${{ needs.resolve.outputs.export-type == 'official' && 'official' || 'custom_build' }}
+          editor-version: ${{ needs.resolve.outputs.engine-ref }}  # 编辑器版本
+          # official 时 editor-path 为空（用官方下载）；custom_build 时用自编译编辑器
+          editor-path: ${{ needs.resolve.outputs.export-type == 'official' && '' || 'editor-bin/godot-editor' }}
+          templates-dir: templates                     # 模板目录
+          templates-platforms: ${{ needs.resolve.outputs.template-platforms }}  # 需要的平台（official 下载模板用）
+          encryption-key: ${{ secrets.ENCRYPTION_KEY }}  # PCK 加密密钥（project 端 encrypt_pck=true 时必需）
+
+      # 第 7 步：上传导出产物
+      - name: 上传导出产物
+        if: ${{ needs.resolve.outputs.upload-artifact == 'true' }}   # 仅在允许上传时
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: export-desktop                  # artifact 名字
+          path: project/bin/*                   # 上传 project/bin/ 下所有文件
+          if-no-files-found: error              # 没有产物则报错
+          retention-days: 30                    # 保留 30 天
+
+  # ----------------------------------------------------------
+  # export-android: 导出 Android 平台
+  # 运行在 Ubuntu 上（需要 Android SDK + JDK）
+  # ----------------------------------------------------------
+  export-android:
+    name: 🤖 导出 Android
+    needs: [resolve, build-templates, build-editor]
+    # 条件：需要 android 平台，且（official 或 build 成功）
+    if: >-
+      always() && needs.resolve.outputs.need-android == 'true' && (
+        needs.resolve.outputs.export-type == 'official' ||
+        (needs.build-templates.result == 'success' && needs.build-editor.result == 'success')
+      )
+    runs-on: ubuntu-22.04
+    steps:
+      # 检出待导出项目到 project/
+      - name: 检出待导出项目
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ needs.resolve.outputs.project-repo }}
+          ref: ${{ needs.resolve.outputs.project-ref }}
+          token: ${{ secrets.GIT_PAT || github.token }}
+          path: project
+
+      # 检出 godot-export action
+      - name: 检出 GodotBuilder 辅助配置
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: godot_builder
+          filter: blob:none
+          sparse-checkout: |
+            .github/actions/godot-export
+
+      # 安装 Android SDK 与 JDK（Android 导出必需）
+      # id: android 是为了后面能引用它输出的 ANDROID_HOME 环境变量
+      - name: 安装 Android SDK 与 JDK
+        id: android
+        uses: android-actions/setup-android@v3
+
+      # 下载构建好的 Android 模板（custom_build 时）
+      - name: 下载 Android 模板
+        if: needs.resolve.outputs.export-type == 'custom_build'
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          path: templates
+          pattern: ${{ needs.resolve.outputs.repo-safe }}-android-template*   # 匹配 Android 模板 artifact
+          merge-multiple: true
+
+      # 下载 custom_build 编辑器（Linux 编辑器，Android 导出用）
+      - name: 下载 custom_build 编辑器
+        if: needs.resolve.outputs.export-type == 'custom_build'
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: ${{ needs.resolve.outputs.repo-safe }}-linux-editor
+          path: editor-bin
+
+      # 重命名编辑器为统一名 godot-editor
+      - name: 下载后再将编辑器重命名为 godot-editor
+        if: needs.resolve.outputs.export-type == 'custom_build'
+        shell: bash
+        run: |
+          F=$(ls editor-bin/godot.linuxbsd.editor* | head -1)
+          [ -n "$F" ] || { ls -la editor-bin; echo "::error::未找到 linux 编辑器产物"; exit 1; }
+          mv "$F" editor-bin/godot-editor
+          chmod +x editor-bin/godot-editor
+
+      # 核心导出步骤（Android）
+      - name: 导出（复用 godot-export）
+        uses: ./godot_builder/.github/actions/godot-export
+        with:
+          project-path: project
+          presets: ${{ needs.resolve.outputs.presets }}
+          target: template_release
+          editor-mode: ${{ needs.resolve.outputs.export-type == 'official' && 'official' || 'custom_build' }}
+          editor-version: ${{ needs.resolve.outputs.engine-ref }}
+          editor-path: ${{ needs.resolve.outputs.export-type == 'official' && '' || 'editor-bin/godot-editor' }}
+          templates-dir: templates
+          templates-platforms: android      # 只处理 Android 平台模板
+          encryption-key: ${{ secrets.ENCRYPTION_KEY }}  # PCK 加密密钥（project 端 encrypt_pck=true 时必需）
+        env:
+          ANDROID_HOME: ${{ steps.android.outputs.ANDROID_HOME }}  # 注入 Android SDK 路径给导出用
+
+      # 上传 Android 导出产物
+      - name: 上传导出产物
+        if: ${{ needs.resolve.outputs.upload-artifact == 'true' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: export-android
+          path: project/bin/*
+          if-no-files-found: error
+          retention-days: 30
+
+  # ============================================================
+  # iOS 需要 macOS 环境（Apple 要求 .ipa 必须用 macOS + Xcode 打包）
+  # 所以有单独的 build-ios-editor（编 macOS 编辑器）+ export-ios（macOS 上导出）
+  # ============================================================
+
+  # ----------------------------------------------------------
+  # build-ios-editor: 编译导出 iOS 用的 macOS 编辑器
+  # ----------------------------------------------------------
+  build-ios-editor:
+    name: 🍎 编译导出用 macOS 编辑器
+    needs: resolve
+    # 仅 custom_build 需自编 macOS 编辑器；official 用官方 .app
+    # 需要 iOS 或 visionOS 导出时都要先有 macOS 编辑器（平台含 ios 或 visionos）
+    if: needs.resolve.outputs.need-ios == 'true' || needs.resolve.outputs.need-visionos == 'true'
+    uses: ./.github/workflows/build.yml
+    with:
+      project: ${{ needs.resolve.outputs.project-repo }}@${{ needs.resolve.outputs.project-ref }}
+      source: ${{ needs.resolve.outputs.engine-source }}
+      ref: ${{ needs.resolve.outputs.engine-ref }}
+      target: editor
+      platform: macos          # 编译 macOS 平台编辑器
+    secrets:
+      GIT_PAT: ${{ secrets.GIT_PAT }}
+      SERVICE_ACCOUNT_KEY: ${{ secrets.SERVICE_ACCOUNT_KEY }}
+      ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+
+  # ----------------------------------------------------------
+  # export-ios: 导出 iOS 平台（在 macOS 虚拟机上运行）
+  # ----------------------------------------------------------
+  export-ios:
+    name: 🍎 导出 iOS
+    needs: [resolve, build-templates, build-ios-editor]
+    if: >-
+      always() && needs.resolve.outputs.need-ios == 'true' && (
+        needs.resolve.outputs.export-type == 'official' ||
+        needs.build-ios-editor.result == 'success'
+      )
+    runs-on: macos-26          # macOS 虚拟机（iOS 导出必需）
+    steps:
+      # 检出待导出项目到 project/
+      - name: 检出待导出项目
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ needs.resolve.outputs.project-repo }}
+          ref: ${{ needs.resolve.outputs.project-ref }}
+          token: ${{ secrets.GIT_PAT || github.token }}
+          path: project
+
+      # 检出 godot-export action
+      - name: 检出 GodotBuilder 辅助配置
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: godot_builder
+          filter: blob:none
+          sparse-checkout: |
+            .github/actions/godot-export
+
+      # 下载构建好的 iOS 模板（custom_build 时）
+      - name: 下载 iOS 模板
+        if: needs.resolve.outputs.export-type == 'custom_build'
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          path: templates
+          pattern: ${{ needs.resolve.outputs.repo-safe }}-ios-template*   # 匹配 iOS 模板 artifact
+          merge-multiple: true
+
+      # 下载自编译的 macOS 编辑器（custom_build 时）
+      - name: 下载 macOS 编辑器
+        if: needs.resolve.outputs.export-type == 'custom_build'
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: ${{ needs.resolve.outputs.repo-safe }}-macos-editor
+          path: editor-src-bin
+
+      # 准备 macOS 编辑器：macos-editor 产物已是 universal（已合并双架构），直接重命名
+      - name: 准备 macOS 编辑器
+        if: needs.resolve.outputs.export-type == 'custom_build'
+        shell: bash
+        run: |
+          # macos-editor 产物已是 universal（macos_builds merge-macos 已合并），直接重命名
+          mkdir -p editor-bin
+          F=$(ls editor-src-bin/godot.macos.editor.universal 2>/dev/null || ls editor-src-bin/godot.macos.editor* | head -1)
+          [ -n "$F" ] || { ls -la editor-src-bin; echo "::error::未找到 macOS 编辑器"; exit 1; }
+          cp "$F" editor-bin/godot-editor
+          chmod +x editor-bin/godot-editor
+          ./editor-bin/godot-editor --version || true   # 验证可执行
+
+      # 导入 Apple 签名证书到钥匙串（用于 iOS 签名）
+      # 需要仓库配置 IOS_CERT_B64 / IOS_CERT_PASS 两个 secret
+      - name: 导入 Apple 签名证书到钥匙串
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.IOS_CERT_B64 }}   # 证书的 base64 编码
+          p12-password: ${{ secrets.IOS_CERT_PASS }}     # 证书密码
+
+      # 核心导出步骤（iOS）
+      - name: 导出（复用 godot-export）
+        uses: ./godot_builder/.github/actions/godot-export
+        with:
+          project-path: project
+          presets: ${{ needs.resolve.outputs.presets }}
+          target: template_release
+          editor-mode: ${{ needs.resolve.outputs.export-type == 'official' && 'official' || 'custom_build' }}
+          editor-version: ${{ needs.resolve.outputs.engine-ref }}
+          editor-platform: macos.universal    # 官方 macOS 编辑器是 universal 包
+          editor-path: ${{ needs.resolve.outputs.export-type == 'official' && '' || 'editor-bin/godot-editor' }}
+          templates-dir: templates
+          templates-platforms: ios            # 只处理 iOS 平台模板
+          encryption-key: ${{ secrets.ENCRYPTION_KEY }}  # PCK 加密密钥（project 端 encrypt_pck=true 时必需）
+
+      # 上传 iOS 导出产物
+      - name: 上传导出产物
+        if: ${{ needs.resolve.outputs.upload-artifact == 'true' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: export-ios
+          path: project/bin/*
+          if-no-files-found: error
+          retention-days: 30
+
+  # ----------------------------------------------------------
+  # export-visionos: 导出 visionOS 平台（在 macOS 虚拟机上运行）
+  # 结构与 export-ios 完全一致，仅平台相关参数不同（visionos）
+  # ----------------------------------------------------------
+  export-visionos:
+    name: 🥽 导出 visionOS
+    needs: [resolve, build-templates, build-ios-editor]
+    if: >-
+      always() && needs.resolve.outputs.need-visionos == 'true' && (
+        needs.resolve.outputs.export-type == 'official' ||
+        needs.build-ios-editor.result == 'success'
+      )
+    runs-on: macos-26          # macOS 虚拟机（visionOS 导出必需）
+    steps:
+      # 检出待导出项目到 project/
+      - name: 检出待导出项目
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ needs.resolve.outputs.project-repo }}
+          ref: ${{ needs.resolve.outputs.project-ref }}
+          token: ${{ secrets.GIT_PAT || github.token }}
+          path: project
+
+      # 检出 godot-export action
+      - name: 检出 GodotBuilder 辅助配置
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: godot_builder
+          filter: blob:none
+          sparse-checkout: |
+            .github/actions/godot-export
+
+      # 下载构建好的 visionOS 模板（custom_build 时）
+      - name: 下载 visionOS 模板
+        if: needs.resolve.outputs.export-type == 'custom_build'
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          path: templates
+          pattern: ${{ needs.resolve.outputs.repo-safe }}-visionos-template*   # 匹配 visionOS 模板 artifact
+          merge-multiple: true
+
+      # 下载自编译的 macOS 编辑器（custom_build 时）
+      - name: 下载 macOS 编辑器
+        if: needs.resolve.outputs.export-type == 'custom_build'
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: ${{ needs.resolve.outputs.repo-safe }}-macos-editor
+          path: editor-src-bin
+
+      # 准备 macOS 编辑器（已是 universal，直接重命名）
+      - name: 准备 macOS 编辑器
+        if: needs.resolve.outputs.export-type == 'custom_build'
+        shell: bash
+        run: |
+          mkdir -p editor-bin
+          F=$(ls editor-src-bin/godot.macos.editor.universal 2>/dev/null || ls editor-src-bin/godot.macos.editor* | head -1)
+          [ -n "$F" ] || { ls -la editor-src-bin; echo "::error::未找到 macOS 编辑器"; exit 1; }
+          cp "$F" editor-bin/godot-editor
+          chmod +x editor-bin/godot-editor
+          ./editor-bin/godot-editor --version || true   # 验证可执行
+
+      # 导入 Apple 签名证书到钥匙串（用于 visionOS 签名）
+      - name: 导入 Apple 签名证书到钥匙串
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.IOS_CERT_B64 }}   # 证书的 base64 编码
+          p12-password: ${{ secrets.IOS_CERT_PASS }}     # 证书密码
+
+      # 核心导出步骤（visionOS）
+      - name: 导出（复用 godot-export）
+        uses: ./godot_builder/.github/actions/godot-export
+        with:
+          project-path: project
+          presets: ${{ needs.resolve.outputs.presets }}
+          target: template_release
+          editor-mode: ${{ needs.resolve.outputs.export-type == 'official' && 'official' || 'custom_build' }}
+          editor-version: ${{ needs.resolve.outputs.engine-ref }}
+          editor-platform: macos.universal    # 官方 macOS 编辑器是 universal 包
+          editor-path: ${{ needs.resolve.outputs.export-type == 'official' && '' || 'editor-bin/godot-editor' }}
+          templates-dir: templates
+          templates-platforms: visionos       # 只处理 visionOS 平台模板
+          encryption-key: ${{ secrets.ENCRYPTION_KEY }}  # PCK 加密密钥（project 端 encrypt_pck=true 时必需）
+
+      # 上传 visionOS 导出产物
+      - name: 上传导出产物
+        if: ${{ needs.resolve.outputs.upload-artifact == 'true' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: export-visionos
+          path: project/bin/*
+          if-no-files-found: error
+          retention-days: 30

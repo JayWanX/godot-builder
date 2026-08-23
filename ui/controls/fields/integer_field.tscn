@@ -1,0 +1,49 @@
+[gd_scene format=3 uid="uid://xquqddxrk34w"]
+
+[ext_resource type="Script" uid="uid://k34a57h7co1y" path="res://ui/controls/fields/integer_field.gd" id="1"]
+[ext_resource type="Texture2D" uid="uid://bjfjlm6avdnng" path="res://assets/icons/reset.svg" id="2_h0hlx"]
+
+[node name="IntegerField" type="HBoxContainer" unique_id=1868100609 node_paths=PackedStringArray("spin_box", "display_name_label", "reset_button")]
+custom_minimum_size = Vector2(0, 34)
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -46.0
+offset_top = -17.0
+offset_right = 46.0
+offset_bottom = 17.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+script = ExtResource("1")
+spin_box = NodePath("SpinBox")
+display_name_label = NodePath("DisplayName")
+reset_button = NodePath("ResetButton")
+
+[node name="DisplayName" type="Label" parent="." unique_id=446593297]
+layout_mode = 2
+vertical_alignment = 1
+
+[node name="SpinBox" type="SpinBox" parent="." unique_id=1579286997]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+theme_type_variation = &"IntegerFieldSpinBox"
+max_value = inf
+update_on_text_changed = true
+custom_arrow_step = 1.0
+custom_arrow_round = true
+
+[node name="ResetButton" type="Button" parent="." unique_id=779206443]
+visible = false
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "恢复默认值"
+icon = ExtResource("2_h0hlx")
+flat = true
+
+[connection signal="value_changed" from="SpinBox" to="." method="_on_spin_box_value_changed"]
+[connection signal="pressed" from="ResetButton" to="." method="reset_control"]

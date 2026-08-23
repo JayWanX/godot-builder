@@ -1,0 +1,35 @@
+name: Setup Python and SCons
+description: 安装 Python 与 pip 版 SCons。
+
+inputs:
+  python-version:
+    description: 要使用的 Python 版本。
+    default: 3.x
+  python-arch:
+    description: Python 架构。
+    default: x64
+  scons-version:
+    description: 要使用的 SCons 版本。
+    default: 4.11.0
+
+runs:
+  using: composite
+  steps:
+    - name: 安装 Python 3.x
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        # 语义化版本范围或 Python 的精确版本号。
+        python-version: ${{ inputs.python-version }}
+        # 可选：x64 或 x86 架构，默认 x64。
+        architecture: ${{ inputs.python-arch }}
+
+    - name: 安装 SCons
+      shell: bash
+      run: |
+        python -c "import sys; print(sys.version)"
+        python -m pip install scons==${{ inputs.scons-version }}
+        scons --version
+
+    - name: 配置问题匹配器
+      shell: bash
+      run: echo ::add-matcher::misc/utility/problem-matchers.json

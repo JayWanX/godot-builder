@@ -1,0 +1,57 @@
+name: Detect required Godot build dependencies
+description: >-
+  读取解析出的 SCons profile.py 以及用户提供的 scons-flags，检测本次构建实际需要的
+  可选依赖（d3d12 / angle / winrt / accesskit / vulkan / use_mingw），供调用方据此
+  控制安装步骤。判定规则：渲染 / SDK 标志默认视为需要，除非在 profile.py 或 scons-flags
+  中显式置为 "no"；use_mingw 默认视为不需要，仅当显式置为 "yes" 时才需要（Windows 默认编译器
+  是 MSVC）。scons-flags 优先于 profile.py（用户显式意图）。这样避免把这些开关强加到 scons
+  命令行上，从而静默覆盖用户的 profile 配置。
+inputs:
+  scons-profile-path:
+    description: >-
+      解析后的 profile.py 绝对路径。空=未知，使用各标志的默认值（SDK 需要，use_mingw 不需要）。
+    required: false
+    default: ""
+  scons-flags:
+    description: >-
+      调用方追加的附加 SCons 标志（如工作流的 matrix.scons-flags + inputs.scons-flags）。
+      其中任何 "flag=yes|no" 都会覆盖 profile.py 中的同名标志，使判定与实际编译一致。空=无。
+    required: false
+    default: ""
+outputs:
+  need-d3d12:
+    description: 需要下载 D3D12 SDK 时输出 "yes"，否则 "no"。
+    value: ${{ steps.detect.outputs.need-d3d12 }}
+  need-angle:
+    description: 需要下载 ANGLE 时输出 "yes"，否则 "no"。
+    value: ${{ steps.detect.outputs.need-angle }}
+  need-winrt:
+    description: 需要下载 WinRT 组件时输出 "yes"，否则 "no"。
+    value: ${{ steps.detect.outputs.need-winrt }}
+  need-accesskit:
+    description: 需要下载 AccessKit 时输出 "yes"，否则 "no"。
+    value: ${{ steps.detect.outputs.need-accesskit }}
+  need-vulkan:
+    description: 需要下载 Vulkan SDK 时输出 "yes"，否则 "no"。
+    value: ${{ steps.detect.outputs.need-vulkan }}
+  need-mingw:
+    description: 需要安装 POSIX 线程版 MinGW（use_mingw=yes）时输出 "yes"，否则 "no"。
+    value: ${{ steps.detect.outputs.need-mingw }}
+runs:
+  using: composite
+  steps:
+    - name: 从 profile.py 与 scons-flags 检测所需依赖 SDK
+      id: detect
+      shell: bash
+      env:
+        INPUT_SCONS_PROFILE_PATH: ${{ inputs.scons-profile-path }}
+        INPUT_SCONS_FLAGS: ${{ inputs.scons-flags }}
+      run: |
+        if command -v python3 >/dev/null 2>&1; then
+          py=python3
+        else
+          py=python
+        fi
+        out="$("$py" "$GITHUB_ACTION_PATH/scripts/detect.py" "${INPUT_SCONS_PROFILE_PATH:-}" "${INPUT_SCONS_FLAGS:-}")"
+        echo "$out"
+        printf '%s\n' "$out" >> "$GITHUB_OUTPUT"
