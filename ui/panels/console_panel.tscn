@@ -1,0 +1,129 @@
+[gd_scene format=3 uid="uid://cdjxi0rocoa1x"]
+
+[ext_resource type="Script" uid="uid://dxejxvko5h2fj" path="res://ui/panels/console_panel.gd" id="2_a87co"]
+[ext_resource type="Texture2D" uid="uid://br3cdi5g07ytx" path="res://assets/icons/clear.svg" id="3_edr5t"]
+[ext_resource type="Texture2D" uid="uid://dg0iwjoopkqwd" path="res://assets/icons/magnifying_glass.svg" id="4_hru1k"]
+[ext_resource type="Texture2D" uid="uid://bcbo23xtk0g1n" path="res://assets/icons/status_info.svg" id="5_g6xmm"]
+[ext_resource type="Texture2D" uid="uid://y87nnooh3wx0" path="res://assets/icons/status_error.svg" id="6_jd8kk"]
+[ext_resource type="Texture2D" uid="uid://c7vi7o1v0ce0c" path="res://assets/icons/status_warning.svg" id="7_ff0hi"]
+
+[node name="ConsolePanel" type="PanelContainer" unique_id=1058905023 node_paths=PackedStringArray("output_text_label", "console_popup_menu", "clear_button", "filter_line_edit", "info_button", "error_button", "warning_button")]
+custom_minimum_size = Vector2(0, 200)
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_type_variation = &"ConsolePanel"
+script = ExtResource("2_a87co")
+output_text_label = NodePath("VBoxContainer/ScrollContainer/MarginContainer/OutputTextLabel")
+console_popup_menu = NodePath("VBoxContainer/ScrollContainer/MarginContainer/OutputTextLabel/ConsolePopupMenu")
+clear_button = NodePath("VBoxContainer/MarginContainer/HBoxContainer/ClearButton")
+filter_line_edit = NodePath("VBoxContainer/MarginContainer/HBoxContainer/FilterLineEdit")
+info_button = NodePath("VBoxContainer/MarginContainer/HBoxContainer/InfoButton")
+error_button = NodePath("VBoxContainer/MarginContainer/HBoxContainer/ErrorButton")
+warning_button = NodePath("VBoxContainer/MarginContainer/HBoxContainer/WarningButton")
+metadata/_edit_use_anchors_ = true
+
+[node name="VBoxContainer" type="VBoxContainer" parent="." unique_id=1512214580]
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="ScrollContainer" type="ScrollContainer" parent="VBoxContainer" unique_id=646381771]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="MarginContainer" type="MarginContainer" parent="VBoxContainer/ScrollContainer" unique_id=1044801380]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 6
+
+[node name="OutputTextLabel" type="RichTextLabel" parent="VBoxContainer/ScrollContainer/MarginContainer" unique_id=766469622]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+focus_mode = 2
+theme_type_variation = &"ConsoleOutputTextLabel"
+bbcode_enabled = true
+scroll_following = true
+selection_enabled = true
+
+[node name="ConsolePopupMenu" type="PopupMenu" parent="VBoxContainer/ScrollContainer/MarginContainer/OutputTextLabel" unique_id=1132431023]
+oversampling_override = 1.0
+
+[node name="MarginContainer" type="MarginContainer" parent="VBoxContainer" unique_id=1858011748]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 6
+
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer/MarginContainer" unique_id=593189468]
+custom_minimum_size = Vector2(0, 32)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="ClearButton" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer" unique_id=1788839261]
+layout_mode = 2
+tooltip_text = "清空输出"
+icon = ExtResource("3_edr5t")
+flat = true
+icon_alignment = 1
+
+[node name="FilterLineEdit" type="LineEdit" parent="VBoxContainer/MarginContainer/HBoxContainer" unique_id=1909564484]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"ConsoleFilterLineEdit"
+placeholder_text = "筛选消息"
+context_menu_enabled = false
+emoji_menu_enabled = false
+clear_button_enabled = true
+caret_blink = true
+right_icon = ExtResource("4_hru1k")
+
+[node name="InfoButton" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer" unique_id=1985902072]
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+tooltip_text = "切换标准输出消息的可见性。"
+theme_type_variation = &"ConsoleFilterButton"
+toggle_mode = true
+button_pressed = true
+text = "0"
+icon = ExtResource("5_g6xmm")
+
+[node name="ErrorButton" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer" unique_id=782975475]
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+tooltip_text = "切换错误的可见性。"
+theme_type_variation = &"ConsoleFilterButton"
+toggle_mode = true
+button_pressed = true
+text = "0"
+icon = ExtResource("6_jd8kk")
+
+[node name="WarningButton" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer" unique_id=2055138533]
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+tooltip_text = "切换警告的可见性。"
+theme_type_variation = &"ConsoleFilterButton"
+toggle_mode = true
+button_pressed = true
+text = "0"
+icon = ExtResource("7_ff0hi")
+
+[connection signal="gui_input" from="VBoxContainer/ScrollContainer/MarginContainer/OutputTextLabel" to="." method="_on_output_text_label_gui_input"]
+[connection signal="meta_clicked" from="VBoxContainer/ScrollContainer/MarginContainer/OutputTextLabel" to="." method="_on_output_text_label_meta_clicked"]
+[connection signal="id_pressed" from="VBoxContainer/ScrollContainer/MarginContainer/OutputTextLabel/ConsolePopupMenu" to="." method="_on_console_popup_menu_id_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/ClearButton" to="." method="_on_clear_button_pressed"]
+[connection signal="text_changed" from="VBoxContainer/MarginContainer/HBoxContainer/FilterLineEdit" to="." method="_on_filter_line_edit_text_changed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/InfoButton" to="." method="_on_filter_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/ErrorButton" to="." method="_on_filter_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/WarningButton" to="." method="_on_filter_button_pressed"]

@@ -1,0 +1,54 @@
+[gd_scene format=3 uid="uid://dsekwvplvbied"]
+
+[ext_resource type="Script" uid="uid://lx4cxxou3cvj" path="res://ui/panels/group_nav_panel.gd" id="1"]
+[ext_resource type="Texture2D" uid="uid://dg0iwjoopkqwd" path="res://assets/icons/magnifying_glass.svg" id="3_gq3h3"]
+
+[node name="GroupNavPanel" type="PanelContainer" unique_id=44231492 node_paths=PackedStringArray("search_line_edit", "group_tree")]
+custom_minimum_size = Vector2(240, 0)
+custom_maximum_size = Vector2(320, -1)
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_type_variation = &"GroupNavPanelContainer"
+script = ExtResource("1")
+search_line_edit = NodePath("MarginContainer/VBoxContainer/SearchLineEdit")
+group_tree = NodePath("MarginContainer/VBoxContainer/ScrollContainer/GroupTree")
+
+[node name="MarginContainer" type="MarginContainer" parent="." unique_id=989612901]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 6
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer" unique_id=1147075343]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="SearchLineEdit" type="LineEdit" parent="MarginContainer/VBoxContainer" unique_id=1130868716]
+layout_mode = 2
+theme_type_variation = &"GroupFilterLineEdit"
+placeholder_text = "搜索选项…"
+context_menu_enabled = false
+emoji_menu_enabled = false
+clear_button_enabled = true
+right_icon = ExtResource("3_gq3h3")
+
+[node name="ScrollContainer" type="ScrollContainer" parent="MarginContainer/VBoxContainer" unique_id=432280429]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="GroupTree" type="Tree" parent="MarginContainer/VBoxContainer/ScrollContainer" unique_id=918549856]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+hide_root = true
+
+[connection signal="text_changed" from="MarginContainer/VBoxContainer/SearchLineEdit" to="." method="_on_search_line_edit_text_changed"]
+[connection signal="button_clicked" from="MarginContainer/VBoxContainer/ScrollContainer/GroupTree" to="." method="_on_group_tree_button_clicked"]
+[connection signal="item_selected" from="MarginContainer/VBoxContainer/ScrollContainer/GroupTree" to="." method="_on_group_tree_item_selected"]

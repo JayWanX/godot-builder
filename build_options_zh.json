@@ -1,0 +1,1042 @@
+{
+	"version": "godot-4.7.1-stable",
+	"groups": {
+		"target": {
+			"display_name": "基础构建目标",
+			"comment": "构建目标、目标平台、CPU 架构及产物命名等基础选项"
+		},
+		"optimize": {
+			"display_name": "优化与性能",
+			"comment": "编译优化级别、链接优化、浮点精度及调试符号等性能相关选项"
+		},
+		"features": {
+			"display_name": "功能开关",
+			"comment": "线程、3D/2D 物理、导航、XR 等引擎功能模块的启用与禁用"
+		},
+		"render": {
+			"display_name": "渲染与图形驱动",
+			"comment": "Vulkan / OpenGL / D3D12 / Metal 等渲染驱动及图形相关选项"
+		},
+		"build": {
+			"display_name": "构建加速与产物",
+			"comment": "Ninja 后端、并行任务数、缓存、编译数据库等构建流程选项"
+		},
+		"profiler": {
+			"display_name": "性能分析器",
+			"comment": "Tracy / Perfetto 等性能分析器集成选项"
+		},
+		"toolchain": {
+			"display_name": "编译器与工具链",
+			"comment": "C/C++ 编译器、链接器及额外编译 / 链接标志"
+		},
+		"windows": {
+			"display_name": "Windows 平台特定",
+			"comment": "Windows 平台专属选项：子系统、MSVC/SDK 版本、消毒器等"
+		},
+		"modules": {
+			"display_name": "模块",
+			"comment": "各功能模块（Mono、物理、导入器、音频等）的启用开关"
+		},
+		"builtin": {
+			"display_name": "内置库",
+			"comment": "zlib、FreeType、SDL 等内置第三方库的选择"
+		}
+	},
+	"options": {
+		"target": {
+			"display_name": "构建目标",
+			"comment": "editor 构建带编辑器可执行文件；template_release 发布导出模板；template_debug 调试导出模板",
+			"group": "target"
+		},
+		"platform": {
+			"display_name": "目标平台",
+			"comment": "选择编译目标运行平台",
+			"group": "target"
+		},
+		"arch": {
+			"display_name": "CPU 架构",
+			"comment": "auto 自动检测或手动指定",
+			"group": "target"
+		},
+		"extra_suffix": {
+			"display_name": "自定义后缀",
+			"comment": "附加到可执行文件名后的自定义后缀，用于区分同一源码下不同配置的产物",
+			"group": "target"
+		},
+		"object_prefix": {
+			"display_name": "目标文件前缀",
+			"comment": "中间目标文件名的自定义前缀，用于区分不同构建配置",
+			"group": "target"
+		},
+		"build_profile": {
+			"display_name": "裁剪配置",
+			"comment": "功能裁剪配置（.gdbuild）文件路径，精细控制包含的类与模块",
+			"group": "target"
+		},
+		"custom_modules": {
+			"display_name": "自定义模块目录",
+			"comment": "额外的 C++ 模块搜索目录，多个路径用逗号分隔",
+			"group": "target"
+		},
+		"custom_modules_recursive": {
+			"display_name": "递归扫描模块",
+			"comment": "递归扫描自定义模块目录下的子文件夹以自动发现模块",
+			"group": "target"
+		},
+		"modules_enabled_by_default": {
+			"display_name": "默认启用模块",
+			"comment": "no 时仅编译显式启用的模块（用于极致裁剪）",
+			"group": "target"
+		},
+		"production": {
+			"display_name": "生产模式",
+			"comment": "移除调试辅助代码与断言，显著减小体积并提升性能；发布务必保持开启",
+			"group": "optimize"
+		},
+		"optimize": {
+			"display_name": "优化级别",
+			"comment": "编辑器默认 debug、模板默认 speed",
+			"group": "optimize"
+		},
+		"lto": {
+			"display_name": "链接时优化",
+			"comment": "none 禁用；auto 自动；thin 轻量（低内存/耗时）；full 全局激进（提升性能但大幅增加链接内存与时间）",
+			"group": "optimize"
+		},
+		"precision": {
+			"display_name": "浮点精度",
+			"comment": "single 32 位单精度（更快）；double 64 位双精度（更精确，与 GDScript 默认一致）",
+			"group": "optimize"
+		},
+		"debug_symbols": {
+			"display_name": "调试符号",
+			"comment": "保留调试符号（如 .pdb）用于崩溃回溯；关闭可减小体积",
+			"group": "optimize"
+		},
+		"separate_debug_symbols": {
+			"display_name": "分离调试符号",
+			"comment": "将调试符号剥离为独立文件，便于发布后单独附加",
+			"group": "optimize"
+		},
+		"debug_paths_relative": {
+			"display_name": "符号路径相对化",
+			"comment": "调试符号中的源文件路径转为相对路径，便于符号文件迁移",
+			"group": "optimize"
+		},
+		"dev_build": {
+			"display_name": "开发者构建",
+			"comment": "定义 DEV_ENABLED 宏，脚本可检测开发环境并运行调试代码",
+			"group": "optimize"
+		},
+		"dev_mode": {
+			"display_name": "开发模式",
+			"comment": "组合开启 verbose、warnings=extra、werror、tests、strict_checks",
+			"group": "optimize"
+		},
+		"threads": {
+			"display_name": "多线程",
+			"comment": "启用线程支持；几乎总是需要开启",
+			"group": "features"
+		},
+		"deprecated": {
+			"display_name": "废弃 API",
+			"comment": "包含已废弃/移除 API 的兼容代码；关闭可减小体积，新项目建议关闭",
+			"group": "features"
+		},
+		"disable_3d": {
+			"display_name": "禁用 3D",
+			"comment": "彻底移除 3D 节点/渲染服务器，适合纯 2D 项目，大幅减小体积与内存",
+			"group": "features"
+		},
+		"disable_advanced_gui": {
+			"display_name": "禁用高级 GUI",
+			"comment": "禁用 Tree/ItemList 等高级控件，进一步压缩体积",
+			"group": "features"
+		},
+		"disable_physics_2d": {
+			"display_name": "禁用 2D 物理",
+			"comment": "移除 2D 物理引擎；编辑器构建不建议禁用",
+			"group": "features"
+		},
+		"disable_physics_3d": {
+			"display_name": "禁用 3D 物理",
+			"comment": "移除内置 3D 物理；启用 Jolt 时可关闭以避免冗余",
+			"group": "features"
+		},
+		"disable_navigation_2d": {
+			"display_name": "禁用 2D 导航",
+			"comment": "移除 2D 导航网格生成与寻路",
+			"group": "features"
+		},
+		"disable_navigation_3d": {
+			"display_name": "禁用 3D 导航",
+			"comment": "移除 3D 导航网格生成与寻路",
+			"group": "features"
+		},
+		"disable_xr": {
+			"display_name": "禁用 XR",
+			"comment": "全局移除所有 XR（AR/VR）接口与模块",
+			"group": "features"
+		},
+		"disable_exceptions": {
+			"display_name": "禁用异常",
+			"comment": "强制禁用 C++ 异常处理，减小体积；Mono（C#）可能依赖异常",
+			"group": "features"
+		},
+		"disable_overrides": {
+			"display_name": "禁用覆盖文件",
+			"comment": "禁止通过 override.cfg 覆盖项目设置，增强安全性",
+			"group": "features"
+		},
+		"disable_path_overrides": {
+			"display_name": "禁用路径覆盖",
+			"comment": "禁用命令行参数篡改资源路径（仅导出模板），强化产品安全",
+			"group": "features"
+		},
+		"no_editor_splash": {
+			"display_name": "禁用自定义闪屏",
+			"comment": "编辑器启动不显示自定义闪屏",
+			"group": "features"
+		},
+		"engine_update_check": {
+			"display_name": "自动检查新版本",
+			"comment": "项目管理器自动检查新版本；通常关闭以减少网络请求",
+			"group": "features"
+		},
+		"steamapi": {
+			"display_name": "Steam API",
+			"comment": "收集编辑器使用统计（仅编辑器）",
+			"group": "features"
+		},
+		"fast_unsafe": {
+			"display_name": "快速不安全编译",
+			"comment": "启用不安全的增量编译优化（代码可能不稳定），仅快速迭代时使用",
+			"group": "features"
+		},
+		"limit_transitive_includes": {
+			"display_name": "限制头文件传播",
+			"comment": "减少修改头文件后的不必要的重新编译",
+			"group": "features"
+		},
+		"scu_build": {
+			"display_name": "SCU 构建",
+			"comment": "单编译单元构建：加快完整构建但严重降低增量编译速度；适用于完整构建，不适用于日常开发",
+			"group": "features"
+		},
+		"scu_limit": {
+			"display_name": "SCU 批次上限",
+			"comment": "每个 SCU 文件的最大包含数（0 不限制）",
+			"group": "features"
+		},
+		"verbose": {
+			"display_name": "详细输出",
+			"comment": "输出详细编译命令行，用于诊断",
+			"group": "features"
+		},
+		"progress": {
+			"display_name": "构建进度条",
+			"comment": "终端显示构建进度指示",
+			"group": "features"
+		},
+		"tests": {
+			"display_name": "单元测试",
+			"comment": "编译并运行单元测试",
+			"group": "features"
+		},
+		"warnings": {
+			"display_name": "警告级别",
+			"comment": "控制编译时警告输出的详细程度",
+			"group": "features"
+		},
+		"werror": {
+			"display_name": "警告即错误",
+			"comment": "任何警告都导致编译失败，强制严格标准",
+			"group": "features"
+		},
+		"strict_checks": {
+			"display_name": "严格检查",
+			"comment": "启用运行时严格检查（如容器越界），影响性能",
+			"group": "features"
+		},
+		"use_precise_math_checks": {
+			"display_name": "高精度检查",
+			"comment": "数学检查使用非常精确的 epsilon（调试选项），开销较大",
+			"group": "features"
+		},
+		"brotli": {
+			"display_name": "Brotli 解压支持",
+			"comment": "启用 Brotli 解压缩及 WOFF2 字体支持",
+			"group": "features"
+		},
+		"graphite": {
+			"display_name": "Graphite 智能字体",
+			"comment": "启用 SIL Graphite 智能字体渲染支持",
+			"group": "features"
+		},
+		"minizip": {
+			"display_name": "ZIP 存档支持",
+			"comment": "启用基于 minizip 的 ZIP 压缩/解压功能（ZIP 功能的后端实现）",
+			"group": "features"
+		},
+		"vulkan": {
+			"display_name": "Vulkan 驱动",
+			"comment": "启用 Vulkan 渲染驱动（Forward+ / Mobile），最佳性能",
+			"group": "render"
+		},
+		"opengl3": {
+			"display_name": "OpenGL 驱动",
+			"comment": "启用 OpenGL 3.x / GLES3 驱动，兼容旧硬件",
+			"group": "render"
+		},
+		"d3d12": {
+			"display_name": "D3D12 驱动",
+			"comment": "启用 Direct3D 12 驱动（仅 Windows，需 Agility SDK）",
+			"group": "render"
+		},
+		"metal": {
+			"display_name": "Metal 驱动",
+			"comment": "启用 Metal 驱动（仅 Apple arm64）",
+			"group": "render"
+		},
+		"angle": {
+			"display_name": "ANGLE 后端",
+			"comment": "Windows 上将 OpenGL ES 转换为 DirectX，提高兼容性",
+			"group": "render"
+		},
+		"use_volk": {
+			"display_name": "动态加载 Vulkan",
+			"comment": "通过 volk 动态加载 Vulkan 加载器，提升兼容性",
+			"group": "render"
+		},
+		"accesskit": {
+			"display_name": "AccessKit 辅助",
+			"comment": "启用屏幕阅读器支持驱动",
+			"group": "render"
+		},
+		"sdl": {
+			"display_name": "SDL3 输入驱动",
+			"comment": "启用 SDL3 输入驱动",
+			"group": "render"
+		},
+		"xaudio2": {
+			"display_name": "XAudio2 音频",
+			"comment": "启用 Windows XAudio2 音频驱动",
+			"group": "render"
+		},
+		"ninja": {
+			"display_name": "Ninja 后端",
+			"comment": "使用 ninja 构建后端，通常比 SCons 默认后端更快",
+			"group": "build"
+		},
+		"ninja_auto_run": {
+			"display_name": "Ninja 自动构建",
+			"comment": "生成 ninja 文件后自动启动构建",
+			"group": "build"
+		},
+		"ninja_file": {
+			"display_name": "Ninja 文件名",
+			"comment": "生成的 ninja 文件名",
+			"group": "build"
+		},
+		"compiledb": {
+			"display_name": "编译数据库",
+			"comment": "生成 compile_commands.json，供 clangd 等使用",
+			"group": "build"
+		},
+		"compiledb_gen_only": {
+			"display_name": "仅生成数据库",
+			"comment": "仅生成编译数据库而不实际编译",
+			"group": "build"
+		},
+		"num_jobs": {
+			"display_name": "并行任务数",
+			"comment": "并行编译任务数，留空自动（CPU 核数 - 1）",
+			"group": "build"
+		},
+		"redirect_build_objects": {
+			"display_name": "重定向中间文件",
+			"comment": "构建中间文件重定向到 bin/obj/，保持源码目录整洁",
+			"group": "build"
+		},
+		"library_type": {
+			"display_name": "库类型",
+			"comment": "executable 可执行程序 / static_library 静态库 / shared_library 动态库",
+			"group": "build"
+		},
+		"import_env_vars": {
+			"display_name": "导入环境变量",
+			"comment": "从外部环境导入的变量列表（逗号分隔）",
+			"group": "build"
+		},
+		"cache_path": {
+			"display_name": "缓存路径",
+			"comment": "SCons 缓存目录，加速不同配置间的重复编译；留空禁用",
+			"group": "build"
+		},
+		"cache_limit": {
+			"display_name": "缓存上限",
+			"comment": "SCons 缓存大小上限（GiB），0 表示无限制",
+			"group": "build"
+		},
+		"vsproj": {
+			"display_name": "生成 VS 工程",
+			"comment": "生成 Visual Studio 解决方案",
+			"group": "build"
+		},
+		"vsproj_name": {
+			"display_name": "VS 工程名",
+			"comment": "Visual Studio 解决方案名称",
+			"group": "build"
+		},
+		"system_certs_path": {
+			"display_name": "系统证书路径",
+			"comment": "TLS 证书默认路径（编辑器与 Linux/BSD 导出模板，供打包维护者）",
+			"group": "build"
+		},
+		"betsy_export_templates": {
+			"display_name": "Betsy 模板压缩",
+			"comment": "在导出模板中启用 Betsy GPU 纹理压缩（增加二进制体积）",
+			"group": "build"
+		},
+		"cvtt_export_templates": {
+			"display_name": "CVTT 导出模板压缩",
+			"comment": "在导出模板中启用 CVTT 纹理压缩（增加二进制体积）",
+			"group": "build"
+		},
+		"profiler": {
+			"display_name": "性能分析器后端",
+			"comment": "none 不启用 / tracy / perfetto / instruments（macOS）",
+			"group": "profiler"
+		},
+		"profiler_path": {
+			"display_name": "分析器路径",
+			"comment": "分析器库或工具的自定义路径，留空自动查找",
+			"group": "profiler"
+		},
+		"profiler_sample_callstack": {
+			"display_name": "调用栈采样",
+			"comment": "随机采样调用栈分析，有额外开销；可能增加性能开销",
+			"group": "profiler"
+		},
+		"profiler_track_memory": {
+			"display_name": "内存追踪",
+			"comment": "追踪内存分配情况（若分析器支持）",
+			"group": "profiler"
+		},
+		"profiler_record_on_demand": {
+			"display_name": "按需记录",
+			"comment": "仅分析器连接时记录数据，降低常态开销（Tracy 为 TRACY_ON_DEMAND）",
+			"group": "profiler"
+		},
+		"module_objectdb_profiler_enabled": {
+			"display_name": "对象数据库分析",
+			"comment": "分析对象创建与内存使用模式",
+			"group": "profiler"
+		},
+		"CXX": {
+			"display_name": "C++ 编译器",
+			"comment": "C++ 编译器可执行文件路径，留空自动检测",
+			"group": "toolchain"
+		},
+		"CC": {
+			"display_name": "C 编译器",
+			"comment": "C 编译器可执行文件路径，留空自动检测",
+			"group": "toolchain"
+		},
+		"LINK": {
+			"display_name": "链接器",
+			"comment": "链接器可执行文件路径，留空自动检测",
+			"group": "toolchain"
+		},
+		"cppdefines": {
+			"display_name": "预处理器宏",
+			"comment": "额外的预处理器宏定义（格式 MACRO=value）",
+			"group": "toolchain"
+		},
+		"ccflags": {
+			"display_name": "公共编译标志",
+			"comment": "C 与 C++ 共用的额外编译标志",
+			"group": "toolchain"
+		},
+		"cxxflags": {
+			"display_name": "C++ 编译标志",
+			"comment": "仅 C++ 的额外编译标志",
+			"group": "toolchain"
+		},
+		"cflags": {
+			"display_name": "C 编译标志",
+			"comment": "仅 C 的额外编译标志",
+			"group": "toolchain"
+		},
+		"linkflags": {
+			"display_name": "链接标志",
+			"comment": "额外的链接标志",
+			"group": "toolchain"
+		},
+		"asflags": {
+			"display_name": "汇编标志",
+			"comment": "汇编器的额外标志",
+			"group": "toolchain"
+		},
+		"arflags": {
+			"display_name": "归档标志",
+			"comment": "静态库归档器标志",
+			"group": "toolchain"
+		},
+		"rcflags": {
+			"display_name": "资源编译标志",
+			"comment": "Windows 资源编译器标志",
+			"group": "toolchain"
+		},
+		"c_compiler_launcher": {
+			"display_name": "C 编译启动器",
+			"comment": "如 ccache，加速重复编译",
+			"group": "toolchain"
+		},
+		"cpp_compiler_launcher": {
+			"display_name": "C++ 编译启动器",
+			"comment": "如 ccache",
+			"group": "toolchain"
+		},
+		"use_mingw": {
+			"display_name": "MinGW 工具链",
+			"comment": "强制使用 MinGW 编译，即使安装了 MSVC",
+			"group": "toolchain"
+		},
+		"use_llvm": {
+			"display_name": "LLVM 工具链",
+			"comment": "强制使用 LLVM/Clang 编译",
+			"group": "toolchain"
+		},
+		"use_static_cpp": {
+			"display_name": "静态链接 C++ 库",
+			"comment": "静态链接 C++ 运行时库，提高部署便携性",
+			"group": "toolchain"
+		},
+		"mingw_prefix": {
+			"display_name": "MinGW 前缀",
+			"comment": "MinGW 安装目录前缀（自定义工具链时）",
+			"group": "toolchain"
+		},
+		"windows_subsystem": {
+			"display_name": "子系统类型",
+			"comment": "gui 不显示控制台窗口 / console 显示控制台（调试输出）",
+			"group": "windows"
+		},
+		"msvc_version": {
+			"display_name": "MSVC 版本",
+			"comment": "强制指定 MSVC 工具集版本，留空自动检测",
+			"group": "windows"
+		},
+		"mssdk_version": {
+			"display_name": "Windows SDK 版本",
+			"comment": "强制指定 Windows SDK 版本，留空自动检测",
+			"group": "windows"
+		},
+		"use_asan": {
+			"display_name": "地址消毒器 (ASAN)",
+			"comment": "检测内存错误（仅 MSVC/Clang）；可能增加运行时开销",
+			"group": "windows"
+		},
+		"use_ubsan": {
+			"display_name": "未定义行为消毒",
+			"comment": "检测未定义行为（LLVM）；可能增加运行时开销",
+			"group": "windows"
+		},
+		"debug_crt": {
+			"display_name": "调试 CRT",
+			"comment": "MSVC 调试版 C 运行时库（/MDd）",
+			"group": "windows"
+		},
+		"incremental_link": {
+			"display_name": "增量链接",
+			"comment": "MSVC 增量链接，加快小改动后的链接",
+			"group": "windows"
+		},
+		"silence_msvc": {
+			"display_name": "静默 MSVC",
+			"comment": "抑制 MSVC 非错误输出，日志更清晰",
+			"group": "windows"
+		},
+		"winrt": {
+			"display_name": "WinRT 支持",
+			"comment": "WinRT API（OneCore TTS 支持）",
+			"group": "windows"
+		},
+		"accesskit_sdk_path": {
+			"display_name": "AccessKit 路径",
+			"comment": "AccessKit C SDK 路径",
+			"group": "windows"
+		},
+		"angle_libs": {
+			"display_name": "ANGLE 库路径",
+			"comment": "ANGLE 静态库路径（OpenGL ES→DirectX）",
+			"group": "windows"
+		},
+		"winrt_path": {
+			"display_name": "WinRT 头文件路径",
+			"comment": "WinRT 头文件路径（MinGW 专用）",
+			"group": "windows"
+		},
+		"mesa_libs": {
+			"display_name": "Mesa 库路径",
+			"comment": "MESA/NIR 静态库（D3D12 需要）",
+			"group": "windows"
+		},
+		"agility_sdk_path": {
+			"display_name": "Agility SDK 路径",
+			"comment": "D3D12 Agility SDK 发行版路径",
+			"group": "windows"
+		},
+		"agility_sdk_multiarch": {
+			"display_name": "Agility 多架构",
+			"comment": "Agility SDK DLL 是否存于架构子目录",
+			"group": "windows"
+		},
+		"use_pix": {
+			"display_name": "PIX 调试",
+			"comment": "启用 PIX（DirectX 12 GPU 调试）运行时",
+			"group": "windows"
+		},
+		"pix_path": {
+			"display_name": "PIX 路径",
+			"comment": "PIX 运行时发行版路径",
+			"group": "windows"
+		},
+		"module_mono_enabled": {
+			"display_name": "Mono 模块",
+			"comment": "C#（Mono）支持；显著增大体积，需 .NET SDK",
+			"group": "modules"
+		},
+		"module_gdscript_enabled": {
+			"display_name": "GDScript 模块",
+			"comment": "核心脚本模块，几乎总是必需",
+			"group": "modules"
+		},
+		"module_jolt_physics_enabled": {
+			"display_name": "Jolt 物理模块",
+			"comment": "Jolt 物理引擎（3D），性能与稳定性更高",
+			"group": "modules"
+		},
+		"module_godot_physics_3d_enabled": {
+			"display_name": "内置 3D 物理",
+			"comment": "GodotPhysics3D 内置物理引擎",
+			"group": "modules"
+		},
+		"module_godot_physics_2d_enabled": {
+			"display_name": "内置 2D 物理",
+			"comment": "GodotPhysics2D 内置 2D 物理引擎",
+			"group": "modules"
+		},
+		"module_lightmapper_rd_enabled": {
+			"display_name": "光照贴图烘焙",
+			"comment": "基于渲染设备的光照贴图烘焙器",
+			"group": "modules"
+		},
+		"module_visual_shader_enabled": {
+			"display_name": "可视化着色器",
+			"comment": "可视化着色器编辑器支持",
+			"group": "modules"
+		},
+		"module_glslang_enabled": {
+			"display_name": "GLSL 编译器",
+			"comment": "GLSL→SPIR-V 着色器编译器，几乎所有渲染功能依赖",
+			"group": "modules"
+		},
+		"module_multiplayer_enabled": {
+			"display_name": "多人游戏模块",
+			"comment": "底层多人同步与网络抽象（ENet/WebRTC/WebSocket 的基础）",
+			"group": "modules"
+		},
+		"module_websocket_enabled": {
+			"display_name": "WebSocket 模块",
+			"comment": "WebSocket 客户端/服务器",
+			"group": "modules"
+		},
+		"module_webrtc_enabled": {
+			"display_name": "WebRTC 模块",
+			"comment": "浏览器/原生应用实时音视频与数据通道",
+			"group": "modules"
+		},
+		"module_mbedtls_enabled": {
+			"display_name": "mbedTLS 模块",
+			"comment": "TLS/SSL 安全通信（HTTPS/WSS）",
+			"group": "modules"
+		},
+		"module_etcpak_enabled": {
+			"display_name": "ETC 压缩模块",
+			"comment": "ETC1/ETC2 纹理压缩（Android 几乎必须）",
+			"group": "modules"
+		},
+		"module_astcenc_enabled": {
+			"display_name": "ASTC 压缩模块",
+			"comment": "ASTC 纹理压缩（移动端常用；modules_enabled_by_default=no 且启用 ANGLE 驱动时必须开启，否则链接报 LNK2019）",
+			"group": "modules"
+		},
+		"module_gltf_enabled": {
+			"display_name": "glTF 导入模块",
+			"comment": "glTF 模型导入（推荐 3D 交换格式）",
+			"group": "modules"
+		},
+		"module_fbx_enabled": {
+			"display_name": "FBX 导入模块",
+			"comment": "FBX 模型导入（依赖 SDK，未安装需禁用）",
+			"group": "modules"
+		},
+		"module_ogg_enabled": {
+			"display_name": "Ogg 容器模块",
+			"comment": "Ogg 容器格式支持",
+			"group": "modules"
+		},
+		"module_vorbis_enabled": {
+			"display_name": "Vorbis 音频模块",
+			"comment": ".ogg 音频解码",
+			"group": "modules"
+		},
+		"module_mp3_enabled": {
+			"display_name": "MP3 音频模块",
+			"comment": "MP3 音频解码",
+			"group": "modules"
+		},
+		"module_freetype_enabled": {
+			"display_name": "FreeType 字体模块",
+			"comment": "矢量字形栅格化字体渲染",
+			"group": "modules"
+		},
+		"module_text_server_adv_enabled": {
+			"display_name": "高级文本服务器",
+			"comment": "复杂文字布局（阿拉伯语/印度语系等）",
+			"group": "modules"
+		},
+		"module_text_server_fb_enabled": {
+			"display_name": "后备文本服务器",
+			"comment": "高级文本服务器不可用时的基础文本布局",
+			"group": "modules"
+		},
+		"module_openxr_enabled": {
+			"display_name": "OpenXR 模块",
+			"comment": "标准 AR/VR 支持",
+			"group": "modules"
+		},
+		"module_webxr_enabled": {
+			"display_name": "WebXR 模块",
+			"comment": "Web 平台沉浸式体验",
+			"group": "modules"
+		},
+		"module_mobile_vr_enabled": {
+			"display_name": "移动 VR 模块",
+			"comment": "移动端 VR 集成",
+			"group": "modules"
+		},
+		"module_camera_enabled": {
+			"display_name": "摄像头模块",
+			"comment": "获取设备摄像头画面",
+			"group": "modules"
+		},
+		"module_csg_enabled": {
+			"display_name": "CSG 模块",
+			"comment": "构造实体几何建模，快速原型制作",
+			"group": "modules"
+		},
+		"module_enet_enabled": {
+			"display_name": "ENet 网络模块",
+			"comment": "UDP 可靠低延迟多人通信",
+			"group": "modules"
+		},
+		"module_gridmap_enabled": {
+			"display_name": "GridMap 模块",
+			"comment": "网格上快速搭建 3D 关卡",
+			"group": "modules"
+		},
+		"module_zip_enabled": {
+			"display_name": "ZIP 模块",
+			"comment": "ZIP 压缩/解压",
+			"group": "modules"
+		},
+		"module_navigation_2d_enabled": {
+			"display_name": "2D 导航模块",
+			"comment": "2D 导航网格生成与寻路",
+			"group": "modules"
+		},
+		"module_navigation_3d_enabled": {
+			"display_name": "3D 导航模块",
+			"comment": "3D 导航网格生成与寻路",
+			"group": "modules"
+		},
+		"module_raycast_enabled": {
+			"display_name": "射线投射模块",
+			"comment": "RayCast2D/3D 节点（碰撞检测与视线判断）",
+			"group": "modules"
+		},
+		"module_jsonrpc_enabled": {
+			"display_name": "JSON-RPC 模块",
+			"comment": "结构化通信协议（与外部工具/调试器）",
+			"group": "modules"
+		},
+		"module_upnp_enabled": {
+			"display_name": "UPnP 模块",
+			"comment": "自动请求路由器开放端口",
+			"group": "modules"
+		},
+		"module_regex_enabled": {
+			"display_name": "正则模块",
+			"comment": "模式匹配与字符串处理",
+			"group": "modules"
+		},
+		"module_noise_enabled": {
+			"display_name": "噪声模块",
+			"comment": "FastNoiseLite 程序化噪声",
+			"group": "modules"
+		},
+		"module_meshoptimizer_enabled": {
+			"display_name": "网格优化模块",
+			"comment": "简化几何体、优化顶点缓存",
+			"group": "modules"
+		},
+		"module_xatlas_unwrap_enabled": {
+			"display_name": "UV 展开模块",
+			"comment": "自动生成高质量光照贴图 UV",
+			"group": "modules"
+		},
+		"module_svg_enabled": {
+			"display_name": "SVG 导入模块",
+			"comment": "矢量图形导入",
+			"group": "modules"
+		},
+		"module_webp_enabled": {
+			"display_name": "WebP 导入模块",
+			"comment": "WebP 图像导入",
+			"group": "modules"
+		},
+		"module_hdr_enabled": {
+			"display_name": "HDR 导入模块",
+			"comment": "HDR 图像格式（.hdr）导入",
+			"group": "modules"
+		},
+		"module_jpg_enabled": {
+			"display_name": "JPEG 导入模块",
+			"comment": "JPEG 图像导入",
+			"group": "modules"
+		},
+		"module_tga_enabled": {
+			"display_name": "TGA 导入模块",
+			"comment": "TGA 图像导入",
+			"group": "modules"
+		},
+		"module_bmp_enabled": {
+			"display_name": "BMP 导入模块",
+			"comment": "BMP 图像导入",
+			"group": "modules"
+		},
+		"module_dds_enabled": {
+			"display_name": "DDS 容器模块",
+			"comment": "DDS 纹理容器直接加载",
+			"group": "modules"
+		},
+		"module_ktx_enabled": {
+			"display_name": "KTX 容器模块",
+			"comment": "KTX 纹理容器（OpenGL/Vulkan 预压缩纹理）",
+			"group": "modules"
+		},
+		"module_basis_universal_enabled": {
+			"display_name": "BasisU 压缩模块",
+			"comment": "Basis Universal 超压缩纹理（跨平台 GPU 压缩）",
+			"group": "modules"
+		},
+		"module_bcdec_enabled": {
+			"display_name": "BCn 解码模块",
+			"comment": "BCn（DXT/BC1-BC7）纹理解码（桌面平台）",
+			"group": "modules"
+		},
+		"module_cvtt_enabled": {
+			"display_name": "Crunch 压缩模块",
+			"comment": "CVTT（Crunch）纹理压缩",
+			"group": "modules"
+		},
+		"module_betsy_enabled": {
+			"display_name": "Betsy 压缩模块",
+			"comment": "实验性 GPU 纹理压缩器（运行时压缩）",
+			"group": "modules"
+		},
+		"module_theora_enabled": {
+			"display_name": "Theora 视频模块",
+			"comment": ".ogv 视频解码",
+			"group": "modules"
+		},
+		"module_interactive_music_enabled": {
+			"display_name": "互动音乐模块",
+			"comment": "根据游戏状态动态切换音乐（自适应音频）",
+			"group": "modules"
+		},
+		"module_tinyexr_enabled": {
+			"display_name": "OpenEXR 模块",
+			"comment": "OpenEXR HDR 图像格式",
+			"group": "modules"
+		},
+		"module_vhacd_enabled": {
+			"display_name": "V-HACD 模块",
+			"comment": "凸分解算法（复杂网格→精确碰撞形状）",
+			"group": "modules"
+		},
+		"module_msdfgen_enabled": {
+			"display_name": "MSDF 字体模块",
+			"comment": "多通道有向距离场字体（TextMesh）",
+			"group": "modules"
+		},
+		"mp3_extra_formats": {
+			"display_name": "MP3 额外格式",
+			"comment": "支持 MP1/MP2 音频格式解码（扩展 mp3 模块）",
+			"group": "modules"
+		},
+		"builtin_zlib": {
+			"display_name": "内置 zlib",
+			"comment": "使用内置 zlib 压缩库",
+			"group": "builtin"
+		},
+		"builtin_zstd": {
+			"display_name": "内置 Zstandard",
+			"comment": "使用内置 Zstandard 压缩库",
+			"group": "builtin"
+		},
+		"builtin_brotli": {
+			"display_name": "内置 Brotli",
+			"comment": "内置 Brotli 压缩（WOFF2 字体解压）",
+			"group": "builtin"
+		},
+		"builtin_freetype": {
+			"display_name": "内置 FreeType",
+			"comment": "内置 FreeType 字体引擎",
+			"group": "builtin"
+		},
+		"builtin_harfbuzz": {
+			"display_name": "内置 HarfBuzz",
+			"comment": "内置 HarfBuzz 文本塑形引擎",
+			"group": "builtin"
+		},
+		"builtin_graphite": {
+			"display_name": "内置 Graphite",
+			"comment": "内置 Graphite 智能字体技术",
+			"group": "builtin"
+		},
+		"builtin_icu4c": {
+			"display_name": "内置 ICU",
+			"comment": "内置 ICU 国际化组件",
+			"group": "builtin"
+		},
+		"builtin_sdl": {
+			"display_name": "内置 SDL",
+			"comment": "内置 SDL 库（输入/窗口管理）",
+			"group": "builtin"
+		},
+		"builtin_mbedtls": {
+			"display_name": "内置 mbedTLS",
+			"comment": "内置 mbedTLS 加密库",
+			"group": "builtin"
+		},
+		"builtin_enet": {
+			"display_name": "内置 ENet",
+			"comment": "内置 ENet 网络库",
+			"group": "builtin"
+		},
+		"builtin_glslang": {
+			"display_name": "内置 glslang",
+			"comment": "内置 glslang 着色器编译器",
+			"group": "builtin"
+		},
+		"builtin_embree": {
+			"display_name": "内置 Embree",
+			"comment": "内置 Embree 光线追踪内核",
+			"group": "builtin"
+		},
+		"builtin_openxr": {
+			"display_name": "内置 OpenXR",
+			"comment": "内置 OpenXR 加载器",
+			"group": "builtin"
+		},
+		"builtin_clipper2": {
+			"display_name": "内置 Clipper2",
+			"comment": "内置 Clipper2 多边形裁剪与偏移",
+			"group": "builtin"
+		},
+		"builtin_msdfgen": {
+			"display_name": "内置 MSDFgen",
+			"comment": "内置 MSDF 生成器",
+			"group": "builtin"
+		},
+		"builtin_recastnavigation": {
+			"display_name": "内置 Recast",
+			"comment": "内置 Recast/Detour 导航网格库",
+			"group": "builtin"
+		},
+		"builtin_rvo2_2d": {
+			"display_name": "内置 RVO2 2D",
+			"comment": "内置 RVO2 2D 避障库",
+			"group": "builtin"
+		},
+		"builtin_rvo2_3d": {
+			"display_name": "内置 RVO2 3D",
+			"comment": "内置 RVO2 3D 避障库",
+			"group": "builtin"
+		},
+		"builtin_xatlas": {
+			"display_name": "内置 XAtlas",
+			"comment": "内置 XAtlas UV 展开库",
+			"group": "builtin"
+		},
+		"builtin_libjpeg_turbo": {
+			"display_name": "内置 libjpeg",
+			"comment": "内置 libjpeg-turbo JPEG 编解码",
+			"group": "builtin"
+		},
+		"builtin_libpng": {
+			"display_name": "内置 libpng",
+			"comment": "内置 libpng PNG 编解码",
+			"group": "builtin"
+		},
+		"builtin_libwebp": {
+			"display_name": "内置 libwebp",
+			"comment": "内置 libwebp WebP 编解码",
+			"group": "builtin"
+		},
+		"builtin_libogg": {
+			"display_name": "内置 libogg",
+			"comment": "内置 libogg 容器库",
+			"group": "builtin"
+		},
+		"builtin_libvorbis": {
+			"display_name": "内置 libvorbis",
+			"comment": "内置 libvorbis 音频编解码",
+			"group": "builtin"
+		},
+		"builtin_libtheora": {
+			"display_name": "内置 libtheora",
+			"comment": "内置 libtheora 视频解码",
+			"group": "builtin"
+		},
+		"builtin_wslay": {
+			"display_name": "内置 wslay",
+			"comment": "内置 wslay WebSocket 库",
+			"group": "builtin"
+		},
+		"builtin_miniupnpc": {
+			"display_name": "内置 miniupnpc",
+			"comment": "内置 miniupnpc UPnP 库",
+			"group": "builtin"
+		},
+		"builtin_pcre2": {
+			"display_name": "内置 PCRE2",
+			"comment": "内置 PCRE2 正则库",
+			"group": "builtin"
+		},
+		"builtin_pcre2_with_jit": {
+			"display_name": "PCRE2 JIT",
+			"comment": "PCRE2 的 JIT 编译加速",
+			"group": "builtin"
+		},
+		"builtin_certs": {
+			"display_name": "内置证书",
+			"comment": "内置 SSL 证书包",
+			"group": "builtin"
+		}
+	}
+}

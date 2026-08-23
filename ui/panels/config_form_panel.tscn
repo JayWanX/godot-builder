@@ -1,0 +1,33 @@
+[gd_scene format=3 uid="uid://cjp7nmjfesydb"]
+
+[ext_resource type="Script" uid="uid://b4afyjwlyjuu" path="res://ui/panels/config_form_panel.gd" id="1"]
+
+[node name="ConfigFormPanel" type="PanelContainer" unique_id=1089945310 node_paths=PackedStringArray("fields_container", "scroll_container")]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_type_variation = &"ConfigFormPanelContainer"
+script = ExtResource("1")
+fields_container = NodePath("MarginContainer/ScrollContainer/FieldsContainer")
+scroll_container = NodePath("MarginContainer/ScrollContainer")
+
+[node name="MarginContainer" type="MarginContainer" parent="." unique_id=2032093732]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 6
+
+[node name="ScrollContainer" type="ScrollContainer" parent="MarginContainer" unique_id=441802853]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="FieldsContainer" type="VBoxContainer" parent="MarginContainer/ScrollContainer" unique_id=336528089]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3

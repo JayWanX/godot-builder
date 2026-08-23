@@ -1,0 +1,33 @@
+[gd_scene format=3 uid="uid://cgxoswyqfkui6"]
+
+[ext_resource type="Script" uid="uid://cyyj7hiuse6nq" path="res://ui/dialogs/setting_confirmation_dialog.gd" id="1_i6kmh"]
+
+[node name="SettingConfirmationDialog" type="ConfirmationDialog" unique_id=1504297000 node_paths=PackedStringArray("fields_container")]
+title = "设置"
+initial_position = 1
+size = Vector2i(640, 360)
+max_size = Vector2i(1280, 720)
+ok_button_text = "确认"
+cancel_button_text = "取消"
+script = ExtResource("1_i6kmh")
+fields_container = NodePath("PanelContainer/MarginContainer/FieldsContainer")
+
+[node name="PanelContainer" type="PanelContainer" parent="." unique_id=949897556]
+offset_right = 40.0
+offset_bottom = 40.0
+
+[node name="MarginContainer" type="MarginContainer" parent="PanelContainer" unique_id=196493553]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 6
+
+[node name="FieldsContainer" type="VBoxContainer" parent="PanelContainer/MarginContainer" unique_id=1504297001]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 8
+
+[connection signal="about_to_popup" from="." to="." method="_on_about_to_popup"]
+[connection signal="confirmed" from="." to="." method="_on_confirmed"]
