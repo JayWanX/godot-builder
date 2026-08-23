@@ -1,0 +1,70 @@
+name: Build Godot
+description: 使用给定选项编译 Godot 引擎。
+
+inputs:
+  target:
+    description: 构建目标（editor、template_release、template_debug）。
+    default: editor
+    type: choice
+    options: [editor, template_debug, template_release]
+  platform:
+    description: 目标平台（linuxbsd, windows, macos, android, ios, visionos, web）。
+    type: choice
+    options: [linuxbsd, windows, macos, android, ios, visionos, web]
+  scons-flags:
+    description: 附加 SCons 标志。
+    type: string
+  scons-cache:
+    description: SCons 缓存路径。
+    default: ${{ github.workspace }}/.scons_cache/
+    type: string
+  build-profile-path:
+    description: Godot 构建配置（.gdbuild / JSON）路径，经 build_profile= 传递。空则省略。
+    default: ""
+    type: string
+  scons-profile-path:
+    description: SCons 配置文件（profile.py）路径，经 profile= 传递。空则省略。
+    default: ""
+    type: string
+  custom-modules-dir:
+    description: 自定义模块目录路径，经 custom_modules= 传递。空则省略。
+    default: ""
+    type: string
+
+runs:
+  using: composite
+  steps:
+    - name: SCons 编译
+      shell: bash
+      env:
+        # 输入经 env 传递，脚本内作为 shell 变量引用，
+        # 防止来自用户可控值的内容注入表达式 / shell。
+        INPUT_PLATFORM: ${{ inputs.platform }}
+        INPUT_TARGET: ${{ inputs.target }}
+        INPUT_SCONS_FLAGS: ${{ inputs.scons-flags }}
+        INPUT_SCONS_CACHE: ${{ inputs.scons-cache }}
+        INPUT_BUILD_PROFILE_PATH: ${{ inputs.build-profile-path }}
+        INPUT_SCONS_PROFILE_PATH: ${{ inputs.scons-profile-path }}
+        INPUT_CUSTOM_MODULES_DIR: ${{ inputs.custom-modules-dir }}
+      run: |
+        EXTRA_FLAGS=""
+        if [ -n "$INPUT_BUILD_PROFILE_PATH" ]; then EXTRA_FLAGS="$EXTRA_FLAGS build_profile=$INPUT_BUILD_PROFILE_PATH"; fi
+        if [ -n "$INPUT_SCONS_PROFILE_PATH" ]; then EXTRA_FLAGS="$EXTRA_FLAGS profile=$INPUT_SCONS_PROFILE_PATH"; fi
+        if [ -n "$INPUT_CUSTOM_MODULES_DIR" ]; then EXTRA_FLAGS="$EXTRA_FLAGS custom_modules=$INPUT_CUSTOM_MODULES_DIR"; fi
+
+        echo "Building with flags:" platform="$INPUT_PLATFORM" target="$INPUT_TARGET" $INPUT_SCONS_FLAGS $EXTRA_FLAGS "cache_path=$INPUT_SCONS_CACHE" redirect_build_objects=no
+
+        if [ "$INPUT_TARGET" != "editor" ]; then
+          # 编译导出模板时不包含编辑器代码
+          rm -rf editor
+        fi
+
+        if [ "${{ github.event.number }}" != "" ]; then
+          # 有 PR 号时设置构建标识（编辑器内会显示）
+          export BUILD_NAME="gh-${{ github.event.number }}"
+        else
+          export BUILD_NAME="gh"
+        fi
+
+        scons platform="$INPUT_PLATFORM" target="$INPUT_TARGET" $INPUT_SCONS_FLAGS $EXTRA_FLAGS "cache_path=$INPUT_SCONS_CACHE" redirect_build_objects=no
+        ls -l bin/

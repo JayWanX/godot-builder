@@ -1,0 +1,94 @@
+name: Resolve Godot Build Parameters
+description: >-
+  Parse engine build parameters from workflow_build.json and UI inputs,
+  output resolved values for downstream platform build jobs.
+
+inputs:
+  project:
+    description: 待导出项目仓库 owner/repo@ref（编译配置来源）。留空则用当前仓库。
+    required: false
+    default: ""
+  source:
+    description: 引擎来源 owner/repo@ref。
+    required: false
+    default: ""
+  ref:
+    description: 引擎引用，覆盖 source 中的 @ref。
+    required: false
+    default: ""
+  target:
+    description: 构建目标（editor/template_debug/template_release）。
+    required: false
+    default: ""
+  platform:
+    description: 构建平台，逗号分隔。
+    required: false
+    default: ""
+  profile:
+    description: SCons profile 来源（empty/file:/repo:）。
+    required: false
+    default: ""
+  gdbuild:
+    description: .gdbuild 来源（empty/file:/repo:）。
+    required: false
+    default: ""
+  build-config:
+    description: workflow_build.json 路径。
+    required: false
+    default: .github/workflow_build.json
+
+outputs:
+  platforms:
+    description: 平台 JSON 数组。
+    value: ${{ steps.resolve.outputs.platforms }}
+  repository:
+    description: 引擎仓库 owner/repo。
+    value: ${{ steps.resolve.outputs.repository }}
+  repo-safe:
+    description: 引擎仓库名安全形式。
+    value: ${{ steps.resolve.outputs.repo-safe }}
+  ref:
+    description: 引擎 ref。
+    value: ${{ steps.resolve.outputs.ref }}
+  engine-sha:
+    description: 引擎 commit SHA。
+    value: ${{ steps.resolve.outputs.engine-sha }}
+  engine-version:
+    description: 引擎版本。
+    value: ${{ steps.resolve.outputs.engine-version }}
+  target:
+    description: 构建目标。
+    value: ${{ steps.resolve.outputs.target }}
+  profile:
+    description: SCons profile 来源。
+    value: ${{ steps.resolve.outputs.profile }}
+  gdbuild:
+    description: .gdbuild 来源。
+    value: ${{ steps.resolve.outputs.gdbuild }}
+  custom-modules:
+    description: 自定义模块。
+    value: ${{ steps.resolve.outputs.custom-modules }}
+  upload-artifact:
+    description: 是否上传产物。
+    value: ${{ steps.resolve.outputs.upload-artifact }}
+
+runs:
+  using: composite
+  steps:
+    - name: 运行构建参数解析脚本
+      id: resolve
+      shell: bash
+      env:
+        UI_PROJECT: ${{ inputs.project }}
+        UI_SOURCE: ${{ inputs.source }}
+        UI_REF: ${{ inputs.ref }}
+        UI_TARGET: ${{ inputs.target }}
+        UI_PLATFORM: ${{ inputs.platform }}
+        UI_PROFILE: ${{ inputs.profile }}
+        UI_GDBUILD: ${{ inputs.gdbuild }}
+        BUILD_CONFIG: ${{ inputs.build-config }}
+        EVENT_NAME: ${{ github.event_name }}
+        PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+        CURRENT_REPO: ${{ github.repository }}
+        CURRENT_SHA: ${{ github.sha }}
+      run: python "$GITHUB_ACTION_PATH/resolve_build.py"

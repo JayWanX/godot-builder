@@ -1,0 +1,228 @@
+[gd_scene format=3 uid="uid://bvxmwmjloq1qm"]
+
+[ext_resource type="Script" uid="uid://c5271ducaw38w" path="res://main.gd" id="1"]
+[ext_resource type="PackedScene" uid="uid://dsekwvplvbied" path="res://ui/panels/group_nav_panel.tscn" id="2"]
+[ext_resource type="Texture2D" uid="uid://bmj7pj12ibi5r" path="res://assets/icons/folder_open.svg" id="2_fc3ap"]
+[ext_resource type="PackedScene" uid="uid://cjp7nmjfesydb" path="res://ui/panels/config_form_panel.tscn" id="3"]
+[ext_resource type="Texture2D" uid="uid://sic3iprteefi" path="res://assets/icons/menu.svg" id="3_luwww"]
+[ext_resource type="PackedScene" uid="uid://b7v677hj4eglt" path="res://ui/controls/build_status_bar.tscn" id="3_yiodr"]
+[ext_resource type="PackedScene" uid="uid://2r3j810bx1j4" path="res://ui/panels/summary_panel.tscn" id="4"]
+[ext_resource type="Texture2D" uid="uid://bvs2cauwokwkw" path="res://assets/icons/preview.svg" id="4_7nk2m"]
+[ext_resource type="Texture2D" uid="uid://da81yjbhyxym" path="res://assets/icons/cog.svg" id="4_qg6ye"]
+[ext_resource type="PackedScene" uid="uid://cdjxi0rocoa1x" path="res://ui/panels/console_panel.tscn" id="5"]
+[ext_resource type="Texture2D" uid="uid://cdew3dsrkvsv3" path="res://assets/icons/build.svg" id="5_ar4ev"]
+[ext_resource type="PackedScene" uid="uid://cgxoswyqfkui6" path="res://ui/dialogs/setting_confirmation_dialog.tscn" id="5_luwww"]
+[ext_resource type="Texture2D" uid="uid://bt52v882irgbg" path="res://assets/icons/file_import.svg" id="9_yiodr"]
+[ext_resource type="PackedScene" uid="uid://eakhuq7ih1lq" path="res://ui/windows/config_preview_window.tscn" id="10_d7h3h"]
+[ext_resource type="Texture2D" uid="uid://bcvffwa55n64v" path="res://assets/icons/file_export.svg" id="10_yiodr"]
+[ext_resource type="Texture2D" uid="uid://cg7q6uux2lcy6" path="res://assets/icons/stop.svg" id="11_yiodr"]
+[ext_resource type="Texture2D" uid="uid://br3cdi5g07ytx" path="res://assets/icons/clear.svg" id="12_yiodr"]
+
+[node name="Main" type="Control" unique_id=1484666448 node_paths=PackedStringArray("source_button", "source_popup_menu", "more_option_button", "more_option_popup_menu", "setting_confirmation_dialog", "source_info_label", "build_status_bar", "config_preview_button", "config_preview_window", "config_import_button", "config_export_button", "build_button", "cancel_button", "group_nav_panel", "config_form_panel", "summary_panel", "console_panel", "file_dialog")]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+script = ExtResource("1")
+source_button = NodePath("VBoxContainer/Toolbar/MarginContainer/HBoxContainer/SourceButton")
+source_popup_menu = NodePath("VBoxContainer/Toolbar/MarginContainer/HBoxContainer/SourceButton/SourcePopupMenu")
+more_option_button = NodePath("VBoxContainer/Toolbar/MarginContainer/HBoxContainer/MoreOptionButton")
+more_option_popup_menu = NodePath("VBoxContainer/Toolbar/MarginContainer/HBoxContainer/MoreOptionButton/MoreOptionPopupMenu")
+setting_confirmation_dialog = NodePath("VBoxContainer/Toolbar/MarginContainer/HBoxContainer/MoreOptionButton/SettingConfirmationDialog")
+source_info_label = NodePath("VBoxContainer/Toolbar/MarginContainer/HBoxContainer/SourceInfoLabel")
+build_status_bar = NodePath("VBoxContainer/Toolbar/MarginContainer/HBoxContainer/BuildStatusBar")
+config_preview_button = NodePath("VBoxContainer/Toolbar/MarginContainer/HBoxContainer/ConfigPreviewButton")
+config_preview_window = NodePath("VBoxContainer/Toolbar/MarginContainer/HBoxContainer/ConfigPreviewButton/ConfigPreviewWindow")
+config_import_button = NodePath("VBoxContainer/Toolbar/MarginContainer/HBoxContainer/ConfigImportButton")
+config_export_button = NodePath("VBoxContainer/Toolbar/MarginContainer/HBoxContainer/ConfigExportButton")
+build_button = NodePath("VBoxContainer/Toolbar/MarginContainer/HBoxContainer/BuildButton")
+cancel_button = NodePath("VBoxContainer/Toolbar/MarginContainer/HBoxContainer/CancelButton")
+group_nav_panel = NodePath("VBoxContainer/MainSplit/MiddleSplit/GroupNavPanel")
+config_form_panel = NodePath("VBoxContainer/MainSplit/MiddleSplit/ConfigFormPanel")
+summary_panel = NodePath("VBoxContainer/MainSplit/MiddleSplit/SummaryPanel")
+console_panel = NodePath("VBoxContainer/MainSplit/ConsolePanel")
+file_dialog = NodePath("FileDialog")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="." unique_id=1745794341]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 0
+
+[node name="Toolbar" type="PanelContainer" parent="VBoxContainer" unique_id=1597823556]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+theme_type_variation = &"ToolbarPanelContainer"
+
+[node name="MarginContainer" type="MarginContainer" parent="VBoxContainer/Toolbar" unique_id=1493343295]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 6
+
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer/Toolbar/MarginContainer" unique_id=1685204976]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="SourceButton" type="Button" parent="VBoxContainer/Toolbar/MarginContainer/HBoxContainer" unique_id=1466931720]
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "加载源码"
+theme_type_variation = &"HeaderBarButton"
+icon = ExtResource("2_fc3ap")
+icon_alignment = 1
+
+[node name="SourcePopupMenu" type="PopupMenu" parent="VBoxContainer/Toolbar/MarginContainer/HBoxContainer/SourceButton" unique_id=323931956]
+size = Vector2i(120, 100)
+min_size = Vector2i(120, 0)
+max_size = Vector2i(640, 16384)
+shrink_width = false
+
+[node name="MoreOptionButton" type="Button" parent="VBoxContainer/Toolbar/MarginContainer/HBoxContainer" unique_id=1698948368]
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "更多选项"
+theme_type_variation = &"HeaderBarButton"
+icon = ExtResource("3_luwww")
+icon_alignment = 1
+
+[node name="MoreOptionPopupMenu" type="PopupMenu" parent="VBoxContainer/Toolbar/MarginContainer/HBoxContainer/MoreOptionButton" unique_id=65543326]
+item_count = 2
+item_0/text = "清除缓存"
+item_0/icon = ExtResource("12_yiodr")
+item_0/id = 0
+item_1/text = "设置"
+item_1/icon = ExtResource("4_qg6ye")
+item_1/id = 1
+
+[node name="SettingConfirmationDialog" parent="VBoxContainer/Toolbar/MarginContainer/HBoxContainer/MoreOptionButton" unique_id=1504297000 instance=ExtResource("5_luwww")]
+
+[node name="VSeparator" type="VSeparator" parent="VBoxContainer/Toolbar/MarginContainer/HBoxContainer" unique_id=773797145]
+layout_mode = 2
+
+[node name="SourceInfoLabel" type="RichTextLabel" parent="VBoxContainer/Toolbar/MarginContainer/HBoxContainer" unique_id=1689881316]
+layout_mode = 2
+focus_mode = 2
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+autowrap_mode = 0
+vertical_alignment = 1
+meta_underlined = false
+hint_underlined = false
+selection_enabled = true
+
+[node name="Spacer" type="Control" parent="VBoxContainer/Toolbar/MarginContainer/HBoxContainer" unique_id=503896221]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+
+[node name="BuildStatusBar" parent="VBoxContainer/Toolbar/MarginContainer/HBoxContainer" unique_id=1455517229 instance=ExtResource("3_yiodr")]
+layout_mode = 2
+
+[node name="VSeparator2" type="VSeparator" parent="VBoxContainer/Toolbar/MarginContainer/HBoxContainer" unique_id=803840849]
+layout_mode = 2
+
+[node name="ConfigImportButton" type="Button" parent="VBoxContainer/Toolbar/MarginContainer/HBoxContainer" unique_id=213422130]
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "导入配置"
+theme_type_variation = &"HeaderBarButton"
+icon = ExtResource("9_yiodr")
+icon_alignment = 1
+
+[node name="ConfigPreviewButton" type="Button" parent="VBoxContainer/Toolbar/MarginContainer/HBoxContainer" unique_id=1968479468]
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "预览"
+theme_type_variation = &"HeaderBarButton"
+icon = ExtResource("4_7nk2m")
+icon_alignment = 1
+
+[node name="ConfigPreviewWindow" parent="VBoxContainer/Toolbar/MarginContainer/HBoxContainer/ConfigPreviewButton" unique_id=1494701274 instance=ExtResource("10_d7h3h")]
+
+[node name="ConfigExportButton" type="Button" parent="VBoxContainer/Toolbar/MarginContainer/HBoxContainer" unique_id=265410162]
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "导出配置"
+theme_type_variation = &"HeaderBarButton"
+icon = ExtResource("10_yiodr")
+icon_alignment = 1
+
+[node name="VSeparator3" type="VSeparator" parent="VBoxContainer/Toolbar/MarginContainer/HBoxContainer" unique_id=948026513]
+layout_mode = 2
+
+[node name="BuildButton" type="Button" parent="VBoxContainer/Toolbar/MarginContainer/HBoxContainer" unique_id=792933959]
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "编译项目"
+theme_type_variation = &"HeaderBarButton"
+icon = ExtResource("5_ar4ev")
+icon_alignment = 1
+
+[node name="CancelButton" type="Button" parent="VBoxContainer/Toolbar/MarginContainer/HBoxContainer" unique_id=824335399]
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "取消构建"
+theme_type_variation = &"HeaderBarButton"
+disabled = true
+icon = ExtResource("11_yiodr")
+icon_alignment = 1
+
+[node name="MainSplit" type="VSplitContainer" parent="VBoxContainer" unique_id=1949374011]
+layout_mode = 2
+size_flags_vertical = 3
+dragger_visibility = 2
+
+[node name="MiddleSplit" type="HSplitContainer" parent="VBoxContainer/MainSplit" unique_id=29202071]
+custom_minimum_size = Vector2(0, 200)
+layout_mode = 2
+size_flags_vertical = 3
+split_offsets = PackedInt32Array(0, 0)
+dragger_visibility = 2
+
+[node name="GroupNavPanel" parent="VBoxContainer/MainSplit/MiddleSplit" unique_id=44231492 instance=ExtResource("2")]
+layout_mode = 2
+
+[node name="ConfigFormPanel" parent="VBoxContainer/MainSplit/MiddleSplit" unique_id=1089945310 instance=ExtResource("3")]
+layout_mode = 2
+
+[node name="SummaryPanel" parent="VBoxContainer/MainSplit/MiddleSplit" unique_id=2099921064 instance=ExtResource("4")]
+layout_mode = 2
+
+[node name="ConsolePanel" parent="VBoxContainer/MainSplit" unique_id=1058905023 instance=ExtResource("5")]
+layout_mode = 2
+
+[node name="FileDialog" type="FileDialog" parent="." unique_id=256200002]
+display_mode = 1
+access = 2
+
+[connection signal="pressed" from="VBoxContainer/Toolbar/MarginContainer/HBoxContainer/SourceButton" to="." method="_on_source_button_pressed"]
+[connection signal="id_pressed" from="VBoxContainer/Toolbar/MarginContainer/HBoxContainer/SourceButton/SourcePopupMenu" to="." method="_on_source_popup_menu_id_pressed"]
+[connection signal="pressed" from="VBoxContainer/Toolbar/MarginContainer/HBoxContainer/MoreOptionButton" to="." method="_on_more_option_button_pressed"]
+[connection signal="id_pressed" from="VBoxContainer/Toolbar/MarginContainer/HBoxContainer/MoreOptionButton/MoreOptionPopupMenu" to="." method="_on_more_option_popup_menu_id_pressed"]
+[connection signal="settings_changed" from="VBoxContainer/Toolbar/MarginContainer/HBoxContainer/MoreOptionButton/SettingConfirmationDialog" to="." method="_on_setting_confirmation_dialog_settings_changed"]
+[connection signal="meta_clicked" from="VBoxContainer/Toolbar/MarginContainer/HBoxContainer/SourceInfoLabel" to="." method="_on_source_info_label_meta_clicked"]
+[connection signal="pressed" from="VBoxContainer/Toolbar/MarginContainer/HBoxContainer/ConfigImportButton" to="." method="_on_config_import_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/Toolbar/MarginContainer/HBoxContainer/ConfigPreviewButton" to="." method="_on_config_preview_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/Toolbar/MarginContainer/HBoxContainer/ConfigExportButton" to="." method="_on_config_export_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/Toolbar/MarginContainer/HBoxContainer/BuildButton" to="." method="_on_build_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/Toolbar/MarginContainer/HBoxContainer/CancelButton" to="." method="_on_cancel_build_requested"]
+[connection signal="group_selected" from="VBoxContainer/MainSplit/MiddleSplit/GroupNavPanel" to="." method="_on_group_nav_panel_group_selected"]
+[connection signal="reset_group_requested" from="VBoxContainer/MainSplit/MiddleSplit/GroupNavPanel" to="." method="_on_group_nav_panel_reset_group_requested"]
+[connection signal="search_text_changed" from="VBoxContainer/MainSplit/MiddleSplit/GroupNavPanel" to="." method="_on_group_nav_panel_search_text_changed"]
+[connection signal="config_changed" from="VBoxContainer/MainSplit/MiddleSplit/ConfigFormPanel" to="." method="_on_config_changed"]
+[connection signal="canceled" from="FileDialog" to="." method="_on_file_dialog_close_requested"]
+[connection signal="close_requested" from="FileDialog" to="." method="_on_file_dialog_close_requested"]
+[connection signal="dir_selected" from="FileDialog" to="." method="_on_file_dialog_selected"]
+[connection signal="file_selected" from="FileDialog" to="." method="_on_file_dialog_selected"]
