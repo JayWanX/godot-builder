@@ -216,7 +216,7 @@ jobs:
       # 从 build 任务上传的 artifact 里按模式匹配下载
       - name: 下载构建的模板
         if: needs.resolve.outputs.export-type == 'custom_build'   # 仅 custom_build
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: templates                          # 下载到 templates/ 目录
           pattern: "${{ needs.resolve.outputs.repo-safe }}-*-template*"  # 匹配模板 artifact 名
@@ -225,7 +225,7 @@ jobs:
       # 第 4 步：下载 custom_build 编译器（Linux 编辑器）
       - name: 下载 custom_build 编辑器
         if: needs.resolve.outputs.export-type == 'custom_build'
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ needs.resolve.outputs.repo-safe }}-linux-editor   # 匹配编辑器 artifact 名
           path: editor-bin                      # 下载到 editor-bin/ 目录
@@ -308,12 +308,12 @@ jobs:
       # id: android 是为了后面能引用它输出的 ANDROID_HOME 环境变量
       - name: 安装 Android SDK 与 JDK
         id: android
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       # 下载构建好的 Android 模板（custom_build 时）
       - name: 下载 Android 模板
         if: needs.resolve.outputs.export-type == 'custom_build'
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: templates
           pattern: ${{ needs.resolve.outputs.repo-safe }}-android-template*   # 匹配 Android 模板 artifact
@@ -322,7 +322,7 @@ jobs:
       # 下载 custom_build 编辑器（Linux 编辑器，Android 导出用）
       - name: 下载 custom_build 编辑器
         if: needs.resolve.outputs.export-type == 'custom_build'
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ needs.resolve.outputs.repo-safe }}-linux-editor
           path: editor-bin
@@ -424,7 +424,7 @@ jobs:
       # 下载构建好的 iOS 模板（custom_build 时）
       - name: 下载 iOS 模板
         if: needs.resolve.outputs.export-type == 'custom_build'
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: templates
           pattern: ${{ needs.resolve.outputs.repo-safe }}-ios-template*   # 匹配 iOS 模板 artifact
@@ -433,7 +433,7 @@ jobs:
       # 下载自编译的 macOS 编辑器（custom_build 时）
       - name: 下载 macOS 编辑器
         if: needs.resolve.outputs.export-type == 'custom_build'
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ needs.resolve.outputs.repo-safe }}-macos-editor
           path: editor-src-bin
@@ -454,7 +454,7 @@ jobs:
       # 导入 Apple 签名证书到钥匙串（用于 iOS 签名）
       # 需要仓库配置 IOS_CERT_B64 / IOS_CERT_PASS 两个 secret
       - name: 导入 Apple 签名证书到钥匙串
-        uses: apple-actions/import-codesign-certs@v3
+        uses: apple-actions/import-codesign-certs@v7
         with:
           p12-file-base64: ${{ secrets.IOS_CERT_B64 }}   # 证书的 base64 编码
           p12-password: ${{ secrets.IOS_CERT_PASS }}     # 证书密码
@@ -520,7 +520,7 @@ jobs:
       # 下载构建好的 visionOS 模板（custom_build 时）
       - name: 下载 visionOS 模板
         if: needs.resolve.outputs.export-type == 'custom_build'
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: templates
           pattern: ${{ needs.resolve.outputs.repo-safe }}-visionos-template*   # 匹配 visionOS 模板 artifact
@@ -529,7 +529,7 @@ jobs:
       # 下载自编译的 macOS 编辑器（custom_build 时）
       - name: 下载 macOS 编辑器
         if: needs.resolve.outputs.export-type == 'custom_build'
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ needs.resolve.outputs.repo-safe }}-macos-editor
           path: editor-src-bin
@@ -548,7 +548,7 @@ jobs:
 
       # 导入 Apple 签名证书到钥匙串（用于 visionOS 签名）
       - name: 导入 Apple 签名证书到钥匙串
-        uses: apple-actions/import-codesign-certs@v3
+        uses: apple-actions/import-codesign-certs@v7
         with:
           p12-file-base64: ${{ secrets.IOS_CERT_B64 }}   # 证书的 base64 编码
           p12-password: ${{ secrets.IOS_CERT_PASS }}     # 证书密码
