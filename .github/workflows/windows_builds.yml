@@ -250,7 +250,7 @@ jobs:
       # 【语法】steps.detect.outputs.need-mingw 引用上一步 detect 的输出做条件
       - name: 安装 MinGW（posix 线程，use_mingw=yes 需要）
         if: matrix.target == inputs.target && steps.detect.outputs.need-mingw == 'yes'
-        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2
+        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2
         with:
           msystem: MINGW64
           install: mingw-w64-x86_64-gcc
